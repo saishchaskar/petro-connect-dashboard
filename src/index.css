@@ -1,0 +1,67 @@
+/* src/index.css */
+
+/* Ledger Table Styles */
+.ledger-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  border: 2px solid #000;
+  font-family: 'Courier New', Courier, monospace; /* Monospace looks more like a printed receipt/ledger */
+  background: white;
+}
+
+.ledger-header {
+  text-align: center;
+  border-bottom: 2px solid #000;
+  padding: 10px;
+  background: #f0f0f0;
+}
+
+/* The Main Grid */
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ledger-table th, .ledger-table td {
+  border: 1px solid #000;
+  padding: 4px;
+  vertical-align: middle;
+}
+
+.ledger-table th {
+  background-color: #e6e6e6;
+  font-weight: bold;
+}
+
+/* Input Styling to look like written text */
+.ledger-input {
+  width: 100%;
+  border: none !important;
+  background: transparent !important;
+  text-align: right;
+  font-weight: 500;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.ledger-input:focus {
+  background: #e6f7ff !important;
+}
+
+/* Removing number spinners */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.section-divider {
+  border-top: 2px solid #000;
+}
+
+.no-border-bottom {
+  border-bottom: none !important;
+}
+.no-border-top {
+  border-top: none !important;
+}
