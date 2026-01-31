@@ -1,21 +1,21 @@
 // src/pages/DailyAccountingPage.tsx
 import React, { useState, useEffect } from 'react';
-import { Form, Button, DatePicker, Select, InputNumber, message, Typography } from 'antd';
+import { Form, Button, DatePicker, Input, InputNumber, message, Typography, Switch } from 'antd';
 import dayjs from 'dayjs';
-import { debounce } from 'lodash';
-import { saveDsrShift } from '../services/dsr';
-import type { DsrShift, NozzleEntry, NoteEntry, DipEntry } from '../types';
+import debounce from 'lodash.debounce';
+import { getDsrShift, saveDsrShift } from '../services/dsr';
+import type { DsrShift, FinancialSummary } from '../types';
 import '../index.css';
 
 const { Title } = Typography;
 
 const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
 
-// Helper to create empty shift data
 const getInitialShift = (): DsrShift => ({
   date: dayjs(),
-  salesman1: 'Nikil',
-  salesman2: 'Elvis',
+  isClubbed: false, // Default to separate accounting
+  salesman1: '',
+  salesman2: '',
   nozzles: [
     { key: 1, nozzleId: 'A1', productType: 'Petrol', startingReading: 0, endingReading: 0, testingSample: 0, rate: 104.52 },
     { key: 2, nozzleId: 'A2', productType: 'Petrol', startingReading: 0, endingReading: 0, testingSample: 0, rate: 104.52 },
@@ -25,13 +25,13 @@ const getInitialShift = (): DsrShift => ({
   notes: DENOMINATIONS.map(d => ({ denomination: d, countPetrol: 0, countDiesel: 0 })),
   summary: {
     totalAmountPetrol: 0, onlinePetrol: 0, cardPetrol: 0, creditPetrol: 0,
-    netCashPetrol: 0, receivedCashPetrol: 0, balancePetrol: 0, cashTotalPetrol: 0,
+    netCashPetrol: 0, coinsPetrol: 0, receivedCashPetrol: 0, balancePetrol: 0, cashTotalPetrol: 0,
     totalAmountDiesel: 0, onlineDiesel: 0, cardDiesel: 0, creditDiesel: 0,
-    netCashDiesel: 0, receivedCashDiesel: 0, balanceDiesel: 0, cashTotalDiesel: 0,
+    netCashDiesel: 0, coinsDiesel: 0, receivedCashDiesel: 0, balanceDiesel: 0, cashTotalDiesel: 0,
   },
   dips: [
-    { productType: 'Petrol', startingDip: 0, endingDip: 0, density: 0, temperature: 0 },
-    { productType: 'Diesel', startingDip: 0, endingDip: 0, density: 0, temperature: 0 },
+    { productType: 'Petrol', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 },
+    { productType: 'Diesel', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 },
   ],
 });
 
@@ -45,52 +45,48 @@ const DailyAccountingPage: React.FC = () => {
 
   const loadShift = async (date: string) => {
     try {
-      // Create new shift for the selected date
-      const fresh = getInitialShift();
-      fresh.date = dayjs(date);
-      setShiftData(fresh);
-      form.setFieldsValue(fresh);
-      message.info('New shift created for ' + date);
+      const existingShift = await getDsrShift(date);
+      const initial = getInitialShift();
+      
+      const loadedShift = existingShift ? {
+        ...initial,
+        ...existingShift,
+        date: dayjs(existingShift.date),
+        nozzles: existingShift.nozzles?.length ? existingShift.nozzles : initial.nozzles,
+        notes: existingShift.notes?.length ? existingShift.notes : initial.notes,
+        summary: { ...initial.summary, ...existingShift.summary },
+        dips: existingShift.dips?.length ? existingShift.dips : initial.dips,
+      } : { ...initial, date: dayjs(date) };
+
+      const calculated = calculateAll(loadedShift);
+      setShiftData(calculated);
+      form.setFieldsValue(calculated);
+      
+      if (!existingShift) message.info('New shift created for ' + date);
     } catch (error) {
       console.error('Error loading shift:', error);
       message.error('Failed to load shift');
     }
   };
 
-  const debouncedSave = debounce(async (values: DsrShift) => {
-    try {
-      const toSave = { 
-        ...values, 
-        date: dayjs(values.date).format('YYYY-MM-DD'),
-        salesman1: values.salesman1,
-        salesman2: values.salesman2,
-      };
-      await saveDsrShift(toSave);
-      message.success({ content: 'Saved', key: 'save', duration: 1 });
-    } catch (err) {
-      console.error('Save error:', err);
-      message.error({ content: 'Save failed', key: 'save' });
-    }
-  }, 1000);
-
-  const handleValuesChange = (_: any, allValues: DsrShift) => {
+  const calculateAll = (data: DsrShift): DsrShift => {
     // 1. Calculate Nozzles
-    const updatedNozzles = allValues.nozzles.map(n => {
+    const updatedNozzles = data.nozzles.map(n => {
       const diff = (n.endingReading || 0) - (n.startingReading || 0);
       const netSale = diff - (n.testingSample || 0);
       const amount = netSale * (n.rate || 0);
       return { ...n, readingDiff: diff, netSale, amount };
     });
 
-    // 2. Calculate Denominations
-    const updatedNotes = allValues.notes.map(n => ({
+    // 2. Calculate Notes (Cash)
+    const updatedNotes = data.notes.map(n => ({
       ...n,
       amountPetrol: (n.countPetrol || 0) * n.denomination,
       amountDiesel: (n.countDiesel || 0) * n.denomination,
     }));
 
-    const totalCashPetrol = updatedNotes.reduce((sum, n) => sum + (n.amountPetrol || 0), 0);
-    const totalCashDiesel = updatedNotes.reduce((sum, n) => sum + (n.amountDiesel || 0), 0);
+    const notesTotalPetrol = updatedNotes.reduce((sum, n) => sum + (n.amountPetrol || 0), 0);
+    const notesTotalDiesel = updatedNotes.reduce((sum, n) => sum + (n.amountDiesel || 0), 0);
 
     // 3. Calculate Summaries
     const petrolNozzles = updatedNozzles.filter(n => n.productType === 'Petrol');
@@ -99,40 +95,128 @@ const DailyAccountingPage: React.FC = () => {
     const totalAmtPetrol = petrolNozzles.reduce((sum, n) => sum + (n.amount || 0), 0);
     const totalAmtDiesel = dieselNozzles.reduce((sum, n) => sum + (n.amount || 0), 0);
 
-    const s = allValues.summary;
-    
-    // Petrol Math
-    const netCashP = totalAmtPetrol - (s.onlinePetrol || 0) - (s.cardPetrol || 0) - (s.creditPetrol || 0);
-    const balanceP = (s.receivedCashPetrol || 0) - netCashP;
+    const s = data.summary;
+    let updatedSummary: FinancialSummary;
 
-    // Diesel Math
-    const netCashD = totalAmtDiesel - (s.onlineDiesel || 0) - (s.cardDiesel || 0) - (s.creditDiesel || 0);
-    const balanceD = (s.receivedCashDiesel || 0) - netCashD;
+    if (data.isClubbed) {
+      // --- CLUBBED MODE ---
+      // We use the "Petrol" fields as the "Global/Combined" fields
+      
+      // 1. Total Revenue = Petrol Sales + Diesel Sales
+      const grandTotalRevenue = totalAmtPetrol + totalAmtDiesel;
+      
+      // 2. Net Cash Expected = Grand Total - (Global Online + Global Card + Global Credit)
+      // Note: We use s.onlinePetrol, s.cardPetrol etc. as the input fields for Global values
+      const netCashGlobal = grandTotalRevenue - (s.onlinePetrol || 0) - (s.cardPetrol || 0) - (s.creditPetrol || 0);
+      
+      // 3. Received Cash = Global Notes + Global Coins
+      const receivedCashGlobal = notesTotalPetrol + (s.coinsPetrol || 0);
+      
+      // 4. Balance
+      const balanceGlobal = netCashGlobal - receivedCashGlobal;
 
-    const updatedSummary = {
-      ...s,
-      totalAmountPetrol: totalAmtPetrol,
-      totalAmountDiesel: totalAmtDiesel,
-      netCashPetrol: netCashP,
-      balancePetrol: balanceP,
-      cashTotalPetrol: totalCashPetrol,
-      netCashDiesel: netCashD,
-      balanceDiesel: balanceD,
-      cashTotalDiesel: totalCashDiesel,
-    };
+      updatedSummary = {
+        ...s,
+        totalAmountPetrol: totalAmtPetrol,
+        totalAmountDiesel: totalAmtDiesel,
+        
+        // Map Global calculations to Petrol fields
+        netCashPetrol: netCashGlobal,
+        receivedCashPetrol: receivedCashGlobal,
+        balancePetrol: balanceGlobal,
+        cashTotalPetrol: notesTotalPetrol,
 
-    const newData = {
-      ...allValues,
+        // Zero out Diesel fields for display safety
+        netCashDiesel: 0,
+        receivedCashDiesel: 0,
+        balanceDiesel: 0,
+        cashTotalDiesel: 0
+      };
+
+    } else {
+      // --- SEPARATE MODE (Existing Logic) ---
+      
+      // Petrol Math
+      const netCashP = totalAmtPetrol - (s.onlinePetrol || 0) - (s.cardPetrol || 0) - (s.creditPetrol || 0);
+      const receivedCashP = notesTotalPetrol + (s.coinsPetrol || 0);
+      const balanceP = netCashP - receivedCashP; 
+
+      // Diesel Math
+      const netCashD = totalAmtDiesel - (s.onlineDiesel || 0) - (s.cardDiesel || 0) - (s.creditDiesel || 0);
+      const receivedCashD = notesTotalDiesel + (s.coinsDiesel || 0);
+      const balanceD = netCashD - receivedCashD;
+
+      updatedSummary = {
+        ...s,
+        totalAmountPetrol: totalAmtPetrol,
+        totalAmountDiesel: totalAmtDiesel,
+        netCashPetrol: netCashP,
+        receivedCashPetrol: receivedCashP,
+        balancePetrol: balanceP,
+        cashTotalPetrol: notesTotalPetrol,
+        
+        netCashDiesel: netCashD,
+        receivedCashDiesel: receivedCashD,
+        balanceDiesel: balanceD,
+        cashTotalDiesel: notesTotalDiesel,
+      };
+    }
+
+    return {
+      ...data,
       nozzles: updatedNozzles,
       notes: updatedNotes,
       summary: updatedSummary,
     };
-
-    setShiftData(newData);
-    // Note: We don't setFieldsValue here to avoid cursor jumping, 
-    // unless we need to update calculated read-only fields which we render directly from state below.
-    debouncedSave(newData);
   };
+
+  const debouncedSave = debounce(async (values: DsrShift) => {
+    try {
+      const toSave = { ...values, date: dayjs(values.date).format('YYYY-MM-DD') };
+      await saveDsrShift(toSave);
+      message.success({ content: 'Saved', key: 'save', duration: 1 });
+    } catch (err) {
+      console.error(err);
+    }
+  }, 1000);
+
+  const handleValuesChange = (_: any, allValues: DsrShift) => {
+    const mergedNozzles = shiftData.nozzles.map((oldN, idx) => ({
+      ...oldN,
+      ...((allValues.nozzles && allValues.nozzles[idx]) || {})
+    }));
+
+    const mergedNotes = shiftData.notes.map((oldN, idx) => ({
+      ...oldN,
+      ...((allValues.notes && allValues.notes[idx]) || {})
+    }));
+    
+    const mergedDips = shiftData.dips.map((oldD, idx) => ({
+      ...oldD,
+      ...((allValues.dips && allValues.dips[idx]) || {})
+    }));
+
+    const mergedData = {
+        ...shiftData,
+        ...allValues,
+        nozzles: mergedNozzles,
+        notes: mergedNotes,
+        dips: mergedDips,
+        summary: { ...shiftData.summary, ...allValues.summary },
+        // Explicitly preserve isClubbed if it's not in allValues (switch might handle differently)
+        isClubbed: allValues.isClubbed !== undefined ? allValues.isClubbed : shiftData.isClubbed
+    };
+
+    const recalculated = calculateAll(mergedData);
+    setShiftData(recalculated);
+    debouncedSave(recalculated);
+  };
+
+  const RenderNumber = ({ value, bold = false }: { value: number | undefined, bold?: boolean }) => (
+    <span style={{ fontWeight: bold ? 'bold' : 'normal', display: 'block', textAlign: 'right' }}>
+      {typeof value === 'number' ? value.toFixed(2) : '0.00'}
+    </span>
+  );
 
   return (
     <div style={{ padding: '20px', background: '#555', minHeight: '100vh' }}>
@@ -146,26 +230,17 @@ const DailyAccountingPage: React.FC = () => {
           {/* --- HEADER --- */}
           <div className="ledger-header">
             <Title level={3} style={{ margin: 0 }}>Om Sai Siddhi Petroleum, Kadewadi</Title>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <strong>Date:</strong>
-                <Form.Item name="date" style={{ margin: 0 }}>
-                   <DatePicker format="DD/MM/YYYY" allowClear={false} onChange={(d) => d && loadShift(d.format('YYYY-MM-DD'))} />
-                </Form.Item>
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+              <Form.Item name="date" style={{ margin: 0 }}>
+                 <DatePicker format="DD/MM/YYYY" allowClear={false} onChange={(d) => d && loadShift(d.format('YYYY-MM-DD'))} />
+              </Form.Item>
               <div style={{ display: 'flex', gap: 20 }}>
-                <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                  <strong>Salesman 1 (Petrol):</strong>
-                  <Form.Item name="salesman1" style={{ margin: 0, width: 120 }}>
-                    <Select options={[{ value: 'Nikil' }, { value: 'Elvis' }]} />
+                  <Form.Item name="salesman1" style={{ margin: 0, width: 150 }}>
+                    <Input className="ledger-input" placeholder="Petrol Salesman" style={{borderBottom: '1px solid #ccc !important'}} />
                   </Form.Item>
-                </div>
-                <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                  <strong>Salesman 2 (Diesel):</strong>
-                  <Form.Item name="salesman2" style={{ margin: 0, width: 120 }}>
-                    <Select options={[{ value: 'Nikil' }, { value: 'Elvis' }]} />
+                  <Form.Item name="salesman2" style={{ margin: 0, width: 150 }}>
+                    <Input className="ledger-input" placeholder="Diesel Salesman" style={{borderBottom: '1px solid #ccc !important'}} />
                   </Form.Item>
-                </div>
               </div>
             </div>
           </div>
@@ -185,7 +260,7 @@ const DailyAccountingPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {/* --- NOZZLE READINGS SECTION --- */}
+              {/* --- NOZZLE INPUTS --- */}
               {['startingReading', 'endingReading'].map((field) => (
                 <tr key={field}>
                   <td>{field === 'startingReading' ? 'Starting Reading' : 'Ending Reading'}</td>
@@ -199,11 +274,10 @@ const DailyAccountingPage: React.FC = () => {
                 </tr>
               ))}
               
-              {/* Calculated Difference */}
               <tr>
                 <td>Reading Difference</td>
                 {shiftData.nozzles.map((n) => (
-                  <td key={n.key} style={{textAlign: 'right'}}>{n.readingDiff?.toFixed(2)}</td>
+                  <td key={n.key}><RenderNumber value={n.readingDiff} /></td>
                 ))}
               </tr>
 
@@ -218,15 +292,13 @@ const DailyAccountingPage: React.FC = () => {
                 ))}
               </tr>
 
-              {/* Calculated Total Sale */}
               <tr>
                 <td><strong>Total Sale (L)</strong></td>
                 {shiftData.nozzles.map((n) => (
-                  <td key={n.key} style={{textAlign: 'right', fontWeight: 'bold'}}>{n.netSale?.toFixed(2)}</td>
+                  <td key={n.key}><RenderNumber value={n.netSale} bold /></td>
                 ))}
               </tr>
 
-              {/* Rate */}
               <tr>
                 <td>Rate / Litre</td>
                 {shiftData.nozzles.map((n, idx) => (
@@ -238,105 +310,126 @@ const DailyAccountingPage: React.FC = () => {
                 ))}
               </tr>
 
-              {/* Calculated Amount */}
               <tr>
                 <td><strong>Amount (₹)</strong></td>
                 {shiftData.nozzles.map((n) => (
-                  <td key={n.key} style={{textAlign: 'right', fontWeight: 'bold'}}>{n.amount?.toFixed(2)}</td>
+                  <td key={n.key}><RenderNumber value={n.amount} bold /></td>
                 ))}
               </tr>
             </tbody>
           </table>
+            
+           {/* --- GRAND TOTAL ROW --- */}
+           <div style={{border: '1px solid #000', borderTop: 'none', padding: '10px', background: '#e6f7ff', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px'}}>
+                <span style={{fontSize: '16px', fontWeight: 'bold'}}>
+                    GRAND TOTAL SALE: ₹ {(shiftData.summary.totalAmountPetrol + shiftData.summary.totalAmountDiesel).toFixed(2)}
+                </span>
+                
+                {/* --- TOGGLE BUTTON FOR CLUBBED ACCOUNTING --- */}
+                <div style={{display: 'flex', alignItems: 'center', gap: 8, background: '#fff', padding: '4px 10px', border: '1px solid #ccc', borderRadius: 4}}>
+                   <span style={{fontWeight: 500}}>Club Accounting</span>
+                   <Form.Item name="isClubbed" valuePropName="checked" style={{margin:0}}>
+                     <Switch checkedChildren="ON" unCheckedChildren="OFF" />
+                   </Form.Item>
+                </div>
+           </div>
 
           {/* --- ACCOUNTING SPLIT SECTION --- */}
           <table className="ledger-table section-divider">
             <thead>
-              <tr>
-                <th colSpan={4} width="50%">Petrol Accounting</th>
-                <th colSpan={4} width="50%">Diesel Accounting</th>
-              </tr>
+              {shiftData.isClubbed ? (
+                <tr>
+                  <th colSpan={8} style={{background: '#d9f7be', fontSize: 16}}>
+                    COMBINED ACCOUNTING (Petrol + Diesel)
+                  </th>
+                </tr>
+              ) : (
+                <tr>
+                  <th colSpan={4} width="50%">Petrol Accounting</th>
+                  <th colSpan={4} width="50%">Diesel Accounting</th>
+                </tr>
+              )}
             </thead>
             <tbody>
-              {/* Row 1: Total Amount Header */}
+              {/* Row 1: Total Amount Headers */}
               <tr>
-                <td><strong>Total Amount</strong></td>
-                <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
-                  ₹ {shiftData.summary.totalAmountPetrol.toFixed(2)}
-                </td>
-                <td><strong>Total Amount</strong></td>
-                <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
-                  ₹ {shiftData.summary.totalAmountDiesel.toFixed(2)}
-                </td>
+                <td><strong>Total Revenue</strong></td>
+                {shiftData.isClubbed ? (
+                  // CLUBBED VIEW: Show Grand Total in the Left Block, merge Right Block
+                   <>
+                    <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
+                      ₹ {(shiftData.summary.totalAmountPetrol + shiftData.summary.totalAmountDiesel).toFixed(2)}
+                    </td>
+                    <td colSpan={4} style={{background: '#f0f0f0', textAlign: 'center', color: '#999'}}>
+                      (Combined)
+                    </td>
+                   </>
+                ) : (
+                  // SEPARATE VIEW
+                  <>
+                    <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
+                      ₹ {shiftData.summary.totalAmountPetrol.toFixed(2)}
+                    </td>
+                    <td><strong>Total Revenue</strong></td>
+                    <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
+                      ₹ {shiftData.summary.totalAmountDiesel.toFixed(2)}
+                    </td>
+                  </>
+                )}
               </tr>
 
-              {/* Row 2: Header for Denominations */}
+              {/* Row 2: Columns Headers */}
               <tr>
                 <td colSpan={2}><strong>Expenses / Receipts</strong></td>
-                <td style={{textAlign:'center'}}><strong>Note</strong></td>
-                <td style={{textAlign:'center'}}><strong>Amt</strong></td>
-                <td colSpan={2}><strong>Expenses / Receipts</strong></td>
-                <td style={{textAlign:'center'}}><strong>Note</strong></td>
-                <td style={{textAlign:'center'}}><strong>Amt</strong></td>
+                <td colSpan={2} style={{textAlign:'center'}}><strong>Notes x Count = Amt</strong></td>
+                {shiftData.isClubbed ? (
+                   <td colSpan={4} style={{background: '#f0f0f0'}}></td>
+                ) : (
+                   <>
+                    <td colSpan={2}><strong>Expenses / Receipts</strong></td>
+                    <td colSpan={2} style={{textAlign:'center'}}><strong>Notes x Count = Amt</strong></td>
+                   </>
+                )}
               </tr>
 
-              {/* Complex Row Merging:
-                 The list of expenses (Online, Card, Credit...) is shorter than the list of Notes (2000, 500, 200, 100...).
-                 We iterate through the Notes array (longer) and conditionally render the Expense fields on the left.
-              */}
+              {/* ROWS for Expenses and Notes */}
               {shiftData.notes.map((note, idx) => {
-                // Map expense fields to specific indices of the loop
                 const expenseLabels = [
                   { label: 'Online Transaction', field: 'online' },
                   { label: 'Card Transaction', field: 'card' },
                   { label: 'Credit Given', field: 'credit' },
-                  { label: 'Net Cash Amount', field: 'netCash', readOnly: true },
-                  { label: 'Received Cash', field: 'receivedCash' },
-                  { label: 'Balance (+/-)', field: 'balance', readOnly: true },
+                  { label: <strong key="nc">Net Cash (Expected)</strong>, field: 'netCash', readOnly: true, highlight: true },
+                  { label: <strong key="rc">Received Cash</strong>, field: 'receivedCash', readOnly: true }, 
+                  { 
+                    label: (
+                      <strong key="bal">
+                        {(shiftData.summary as any)[`${shiftData.isClubbed ? 'balancePetrol' : 'balancePetrol'}`] >= 0 ? 'Shortage (-)' : 'Excess (+)'}
+                      </strong>
+                    ), 
+                    field: 'balance', 
+                    readOnly: true, 
+                    highlight: true },
                 ];
                 
-                const expenseItem = expenseLabels[idx]; // May be undefined for lower rows
+                const expenseItem = expenseLabels[idx];
 
                 return (
                   <tr key={note.denomination}>
-                    {/* --- PETROL LEFT --- */}
+                    {/* --- LEFT SIDE (Petrol OR Global) --- */}
                     {expenseItem ? (
                       <>
                         <td>{expenseItem.label}</td>
                         <td>
                           {expenseItem.readOnly ? (
-                            <div style={{textAlign: 'right', fontWeight: 'bold'}}>
-                              {(shiftData.summary as any)[`${expenseItem.field}Petrol`]?.toFixed(2)}
-                            </div>
+                            <RenderNumber 
+                              value={expenseItem.field === 'balance' 
+                                ? Math.abs((shiftData.summary as any).balancePetrol) 
+                                : (shiftData.summary as any)[`${expenseItem.field}Petrol`]
+                              } 
+                              bold={!!expenseItem.highlight} 
+                            />
                           ) : (
                             <Form.Item name={['summary', `${expenseItem.field}Petrol`]} style={{ margin: 0 }}>
-                              <InputNumber className="ledger-input" controls={false} />
-                            </Form.Item>
-                          )}
-                        </td>
-                      </>
-                    ) : (
-                      <td colSpan={2} style={{background: '#f9f9f9'}}></td> // Empty filler
-                    )}
-
-                    {/* --- PETROL NOTES --- */}
-                    <td style={{textAlign: 'center'}}>{note.denomination}</td>
-                    <td>
-                      <Form.Item name={['notes', idx, 'countPetrol']} style={{ margin: 0 }}>
-                        <InputNumber className="ledger-input" placeholder="Count" controls={false} />
-                      </Form.Item>
-                    </td>
-
-                    {/* --- DIESEL LEFT --- */}
-                    {expenseItem ? (
-                      <>
-                        <td>{expenseItem.label}</td>
-                        <td>
-                          {expenseItem.readOnly ? (
-                            <div style={{textAlign: 'right', fontWeight: 'bold'}}>
-                              {(shiftData.summary as any)[`${expenseItem.field}Diesel`]?.toFixed(2)}
-                            </div>
-                          ) : (
-                            <Form.Item name={['summary', `${expenseItem.field}Diesel`]} style={{ margin: 0 }}>
                               <InputNumber className="ledger-input" controls={false} />
                             </Form.Item>
                           )}
@@ -346,25 +439,108 @@ const DailyAccountingPage: React.FC = () => {
                       <td colSpan={2} style={{background: '#f9f9f9'}}></td>
                     )}
 
-                    {/* --- DIESEL NOTES --- */}
-                    <td style={{textAlign: 'center'}}>{note.denomination}</td>
-                    <td>
-                      <Form.Item name={['notes', idx, 'countDiesel']} style={{ margin: 0 }}>
-                         <InputNumber className="ledger-input" placeholder="Count" controls={false} />
-                      </Form.Item>
+                    {/* --- LEFT NOTES (Petrol OR Global) --- */}
+                    <td colSpan={2} style={{padding: 0}}>
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px'}}>
+                            <span style={{width: '40px', fontWeight: 'bold'}}>{note.denomination}</span>
+                            <span>x</span>
+                            <Form.Item name={['notes', idx, 'countPetrol']} style={{ margin: 0, width: '60px' }}>
+                                <InputNumber className="ledger-input" style={{textAlign: 'center', borderBottom: '1px solid #ddd !important'}} controls={false} />
+                            </Form.Item>
+                            <span>=</span>
+                            <span style={{width: '60px', textAlign: 'right'}}>{(note.amountPetrol || 0).toFixed(0)}</span>
+                        </div>
                     </td>
+
+                    {/* --- RIGHT SIDE (Diesel - Hidden if Clubbed) --- */}
+                    {shiftData.isClubbed ? (
+                      <td colSpan={4} style={{background: '#f0f0f0'}}></td>
+                    ) : (
+                      <>
+                        {expenseItem ? (
+                          <>
+                            <td>{expenseItem.label}</td>
+                            <td style={{ color: expenseItem.field === 'balance' ? (shiftData.summary.balanceDiesel >= 0 ? 'red' : 'green') : 'inherit' }}>
+                              {expenseItem.readOnly ? (
+                                <RenderNumber 
+                                    value={expenseItem.field === 'balance' 
+                                      ? Math.abs((shiftData.summary as any).balanceDiesel) 
+                                      : (shiftData.summary as any)[`${expenseItem.field}Diesel`]
+                                    } 
+                                    bold={!!expenseItem.highlight} 
+                                />
+                              ) : (
+                                <Form.Item name={['summary', `${expenseItem.field}Diesel`]} style={{ margin: 0 }}>
+                                  <InputNumber className="ledger-input" controls={false} />
+                                </Form.Item>
+                              )}
+                            </td>
+                          </>
+                        ) : (
+                          <td colSpan={2} style={{background: '#f9f9f9'}}></td>
+                        )}
+
+                        <td colSpan={2} style={{padding: 0}}>
+                            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px'}}>
+                                <span style={{width: '40px', fontWeight: 'bold'}}>{note.denomination}</span>
+                                <span>x</span>
+                                <Form.Item name={['notes', idx, 'countDiesel']} style={{ margin: 0, width: '60px' }}>
+                                    <InputNumber className="ledger-input" style={{textAlign: 'center', borderBottom: '1px solid #ddd !important'}} controls={false} />
+                                </Form.Item>
+                                <span>=</span>
+                                <span style={{width: '60px', textAlign: 'right'}}>{(note.amountDiesel || 0).toFixed(0)}</span>
+                            </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 );
               })}
 
-              {/* Total Row for Notes */}
+              {/* Coins Row */}
               <tr>
                 <td colSpan={2}></td>
-                <td><strong>Total</strong></td>
-                <td style={{textAlign: 'right'}}><strong>{shiftData.summary.cashTotalPetrol}</strong></td>
+                <td colSpan={2} style={{padding: 0}}>
+                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px'}}>
+                        <span style={{fontWeight: 'bold'}}>Coins</span>
+                        <Form.Item name={['summary', 'coinsPetrol']} style={{ margin: 0, flex: 1 }}>
+                            <InputNumber className="ledger-input" controls={false} />
+                        </Form.Item>
+                    </div>
+                </td>
+                {shiftData.isClubbed ? (
+                  <td colSpan={4} style={{background: '#f0f0f0'}}></td>
+                ) : (
+                  <>
+                    <td colSpan={2}></td>
+                    <td colSpan={2} style={{padding: 0}}>
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px'}}>
+                            <span style={{fontWeight: 'bold'}}>Coins</span>
+                            <Form.Item name={['summary', 'coinsDiesel']} style={{ margin: 0, flex: 1 }}>
+                                <InputNumber className="ledger-input" controls={false} />
+                            </Form.Item>
+                        </div>
+                    </td>
+                  </>
+                )}
+              </tr>
+
+              {/* Total Row for Notes + Coins */}
+              <tr style={{background: '#eee'}}>
                 <td colSpan={2}></td>
-                <td><strong>Total</strong></td>
-                <td style={{textAlign: 'right'}}><strong>{shiftData.summary.cashTotalDiesel}</strong></td>
+                <td colSpan={2} style={{textAlign: 'right'}}>
+                    <strong>Total Cash: ₹ {shiftData.summary.receivedCashPetrol.toFixed(2)}</strong>
+                </td>
+                {shiftData.isClubbed ? (
+                   <td colSpan={4}></td>
+                ) : (
+                   <>
+                    <td colSpan={2}></td>
+                    <td colSpan={2} style={{textAlign: 'right'}}>
+                        <strong>Total Cash: ₹ {shiftData.summary.receivedCashDiesel.toFixed(2)}</strong>
+                    </td>
+                   </>
+                )}
               </tr>
             </tbody>
           </table>
@@ -376,7 +552,7 @@ const DailyAccountingPage: React.FC = () => {
           <table className="ledger-table">
             <thead>
               <tr>
-                <th>Description</th>
+                <th width="30%">Description</th>
                 <th>Petrol</th>
                 <th>Diesel</th>
               </tr>
@@ -409,7 +585,7 @@ const DailyAccountingPage: React.FC = () => {
                 </td>
               </tr>
               <tr>
-                <td>Density / Temp</td>
+                <td>Density / Temperature</td>
                 <td>
                     <div style={{display:'flex'}}>
                         <Form.Item name={['dips', 0, 'density']} style={{margin:0, flex:1}}>
@@ -431,6 +607,19 @@ const DailyAccountingPage: React.FC = () => {
                             <InputNumber className="ledger-input" placeholder="Tmp" controls={false} />
                         </Form.Item>
                     </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>SALE / STOCK</strong></td>
+                <td>
+                    <Form.Item name={['dips', 0, 'saleOrStock']} style={{margin:0}}>
+                        <InputNumber className="ledger-input" controls={false} />
+                    </Form.Item>
+                </td>
+                <td>
+                    <Form.Item name={['dips', 1, 'saleOrStock']} style={{margin:0}}>
+                        <InputNumber className="ledger-input" controls={false} />
+                    </Form.Item>
                 </td>
               </tr>
             </tbody>

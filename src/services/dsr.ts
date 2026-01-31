@@ -1,5 +1,6 @@
 // src/services/dsr.ts
-import apiClient from './api';
+import apiClient from './api'; // Ensure this path is correct
+import dayjs from 'dayjs';
 import type { DsrShift } from '../types';
 
 /**
@@ -16,14 +17,17 @@ export const saveDsrShift = async (shift: any): Promise<DsrShift> => {
 };
 
 /**
- * Fetches all DSR shifts from the backend.
+ * Fetches a single DSR shift for a given date from the backend.
  */
-export const getDsrShifts = async (): Promise<DsrShift[]> => {
+export const getDsrShift = async (date: string): Promise<DsrShift | null> => {
   try {
-    const response = await apiClient.get('/dsr');
-    return response.data;
+    const response = await apiClient.get(`/dsr/${date}`);
+    if (response.data) {
+      return { ...response.data, date: dayjs(response.data.date) };
+    }
+    return null;
   } catch (error) {
-    console.error('Error fetching DSR shifts:', error);
-    throw error;
+    console.error('Error fetching DSR shift for date ' + date, error);
+    return null; // Return null on 404 or other errors
   }
 };
