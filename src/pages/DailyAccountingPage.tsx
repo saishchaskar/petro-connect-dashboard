@@ -1,71 +1,98 @@
 // src/pages/DailyAccountingPage.tsx
 import React, { useState, useEffect } from 'react';
-import { Form, Button, DatePicker, Input, InputNumber, message, Typography, Switch } from 'antd';
+import { Form, Button, DatePicker, Input, InputNumber, message, Typography, Switch, Select } from 'antd';
 import dayjs from 'dayjs';
 import debounce from 'lodash.debounce';
 import { getDsrShift, saveDsrShift } from '../services/dsr';
-import type { DsrShift, FinancialSummary } from '../types';
+import { getStationConfig } from '../services/config';
+import type { DsrShift, FinancialSummary, StationConfig } from '../types';
 import '../index.css';
 
 const { Title } = Typography;
+const { Option } = Select;
 
 const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
 
-const getInitialShift = (): DsrShift => ({
-  date: dayjs(),
-  isClubbed: false, // Default to separate accounting
-  salesman1: '',
-  salesman2: '',
-  nozzles: [
-    { key: 1, nozzleId: 'A1', productType: 'Petrol', startingReading: 0, endingReading: 0, testingSample: 0, rate: 104.52 },
-    { key: 2, nozzleId: 'A2', productType: 'Petrol', startingReading: 0, endingReading: 0, testingSample: 0, rate: 104.52 },
-    { key: 3, nozzleId: 'V1', productType: 'Diesel', startingReading: 0, endingReading: 0, testingSample: 0, rate: 91.04 },
-    { key: 4, nozzleId: 'V2', productType: 'Diesel', startingReading: 0, endingReading: 0, testingSample: 0, rate: 91.04 },
-  ],
-  notes: DENOMINATIONS.map(d => ({ denomination: d, countPetrol: 0, countDiesel: 0 })),
-  summary: {
-    totalAmountPetrol: 0, onlinePetrol: 0, cardPetrol: 0, creditPetrol: 0,
-    netCashPetrol: 0, coinsPetrol: 0, receivedCashPetrol: 0, balancePetrol: 0, cashTotalPetrol: 0,
-    totalAmountDiesel: 0, onlineDiesel: 0, cardDiesel: 0, creditDiesel: 0,
-    netCashDiesel: 0, coinsDiesel: 0, receivedCashDiesel: 0, balanceDiesel: 0, cashTotalDiesel: 0,
-  },
-  dips: [
-    { productType: 'Petrol', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 },
-    { productType: 'Diesel', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 },
-  ],
-});
+// Helper to generate a blank shift based on CURRENT Configuration
+const getInitialShift = (config: StationConfig, dateStr: string, shiftType: string): DsrShift => {
+  // Flatten nozzles from DUs
+  const allNozzles = config.dispensingUnits.flatMap(du => 
+    du.nozzles.map((n, idx) => ({
+      key: `${du.name}_${n.id}`,
+      duName: du.name,
+      nozzleId: n.id,
+      productType: n.productType,
+      startingReading: 0,
+      endingReading: 0,
+      testingSample: 0,
+      rate: n.productType === 'Petrol' ? 104.52 : 91.04, // Default rates
+    }))
+  );
+
+  return {
+    date: dayjs(dateStr),
+    shiftType: shiftType, // 'Day' or 'Night'
+    isClubbed: false,
+    salesman1: '',
+    salesman2: '',
+    nozzles: allNozzles, // Dynamic nozzles
+    notes: DENOMINATIONS.map(d => ({ denomination: d, countPetrol: 0, countDiesel: 0 })),
+    summary: {
+      totalAmountPetrol: 0, onlinePetrol: 0, cardPetrol: 0, creditPetrol: 0,
+      netCashPetrol: 0, coinsPetrol: 0, receivedCashPetrol: 0, balancePetrol: 0, cashTotalPetrol: 0,
+      totalAmountDiesel: 0, onlineDiesel: 0, cardDiesel: 0, creditDiesel: 0,
+      netCashDiesel: 0, coinsDiesel: 0, receivedCashDiesel: 0, balanceDiesel: 0, cashTotalDiesel: 0,
+    },
+    dips: [
+      { productType: 'Petrol', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 },
+      { productType: 'Diesel', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 },
+    ],
+  };
+};
 
 const DailyAccountingPage: React.FC = () => {
   const [form] = Form.useForm<DsrShift>();
-  const [shiftData, setShiftData] = useState<DsrShift>(getInitialShift());
+  const [config, setConfig] = useState<StationConfig>(getStationConfig());
+  const [currentDate, setCurrentDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
+  const [currentShift, setCurrentShift] = useState<string>('Day');
+  
+  // We initialize state with config defaults first
+  const [shiftData, setShiftData] = useState<DsrShift>(getInitialShift(getStationConfig(), dayjs().format('YYYY-MM-DD'), 'Day'));
 
   useEffect(() => {
-    loadShift(dayjs().format('YYYY-MM-DD'));
+    // Refresh config on mount
+    const loadedConfig = getStationConfig();
+    setConfig(loadedConfig);
+    loadShift(currentDate, currentShift, loadedConfig);
   }, []);
 
-  const loadShift = async (date: string) => {
+  const loadShift = async (date: string, shift: string, cfg: StationConfig) => {
     try {
-      const existingShift = await getDsrShift(date);
-      const initial = getInitialShift();
+      // In a real backend, you would pass date AND shift to the API
+      // e.g. /dsr?date=2025-01-01&shift=Day
+      const existingShift = await getDsrShift(date); // Modify API to accept shift if needed
       
+      const initial = getInitialShift(cfg, date, shift);
+      
+      // Basic merge logic (needs improvement if backend structure differs from current config)
       const loadedShift = existingShift ? {
         ...initial,
         ...existingShift,
-        date: dayjs(existingShift.date),
-        nozzles: existingShift.nozzles?.length ? existingShift.nozzles : initial.nozzles,
-        notes: existingShift.notes?.length ? existingShift.notes : initial.notes,
+        date: dayjs(existingShift.date), // Restore Dayjs object
+        shiftType: shift,
+        // If nozzles changed in config since last save, we might have mismatch. 
+        // For now, we assume config is stable or we prioritize saved data.
+        nozzles: existingShift.nozzles?.length === initial.nozzles.length ? existingShift.nozzles : initial.nozzles,
         summary: { ...initial.summary, ...existingShift.summary },
-        dips: existingShift.dips?.length ? existingShift.dips : initial.dips,
-      } : { ...initial, date: dayjs(date) };
+      } : initial;
 
       const calculated = calculateAll(loadedShift);
       setShiftData(calculated);
       form.setFieldsValue(calculated);
       
-      if (!existingShift) message.info('New shift created for ' + date);
     } catch (error) {
       console.error('Error loading shift:', error);
-      message.error('Failed to load shift');
+      message.error('Failed to load shift data');
     }
   };
 
@@ -78,7 +105,7 @@ const DailyAccountingPage: React.FC = () => {
       return { ...n, readingDiff: diff, netSale, amount };
     });
 
-    // 2. Calculate Notes (Cash)
+    // 2. Calculate Notes
     const updatedNotes = data.notes.map(n => ({
       ...n,
       amountPetrol: (n.countPetrol || 0) * n.denomination,
@@ -88,7 +115,7 @@ const DailyAccountingPage: React.FC = () => {
     const notesTotalPetrol = updatedNotes.reduce((sum, n) => sum + (n.amountPetrol || 0), 0);
     const notesTotalDiesel = updatedNotes.reduce((sum, n) => sum + (n.amountDiesel || 0), 0);
 
-    // 3. Calculate Summaries
+    // 3. Calculate Summaries (Grouping by Product Type from Config)
     const petrolNozzles = updatedNozzles.filter(n => n.productType === 'Petrol');
     const dieselNozzles = updatedNozzles.filter(n => n.productType === 'Diesel');
 
@@ -99,49 +126,26 @@ const DailyAccountingPage: React.FC = () => {
     let updatedSummary: FinancialSummary;
 
     if (data.isClubbed) {
-      // --- CLUBBED MODE ---
-      // We use the "Petrol" fields as the "Global/Combined" fields
-      
-      // 1. Total Revenue = Petrol Sales + Diesel Sales
       const grandTotalRevenue = totalAmtPetrol + totalAmtDiesel;
-      
-      // 2. Net Cash Expected = Grand Total - (Global Online + Global Card + Global Credit)
-      // Note: We use s.onlinePetrol, s.cardPetrol etc. as the input fields for Global values
       const netCashGlobal = grandTotalRevenue - (s.onlinePetrol || 0) - (s.cardPetrol || 0) - (s.creditPetrol || 0);
-      
-      // 3. Received Cash = Global Notes + Global Coins
       const receivedCashGlobal = notesTotalPetrol + (s.coinsPetrol || 0);
-      
-      // 4. Balance
       const balanceGlobal = netCashGlobal - receivedCashGlobal;
 
       updatedSummary = {
         ...s,
         totalAmountPetrol: totalAmtPetrol,
         totalAmountDiesel: totalAmtDiesel,
-        
-        // Map Global calculations to Petrol fields
         netCashPetrol: netCashGlobal,
         receivedCashPetrol: receivedCashGlobal,
         balancePetrol: balanceGlobal,
         cashTotalPetrol: notesTotalPetrol,
-
-        // Zero out Diesel fields for display safety
-        netCashDiesel: 0,
-        receivedCashDiesel: 0,
-        balanceDiesel: 0,
-        cashTotalDiesel: 0
+        netCashDiesel: 0, receivedCashDiesel: 0, balanceDiesel: 0, cashTotalDiesel: 0
       };
-
     } else {
-      // --- SEPARATE MODE (Existing Logic) ---
-      
-      // Petrol Math
       const netCashP = totalAmtPetrol - (s.onlinePetrol || 0) - (s.cardPetrol || 0) - (s.creditPetrol || 0);
       const receivedCashP = notesTotalPetrol + (s.coinsPetrol || 0);
       const balanceP = netCashP - receivedCashP; 
 
-      // Diesel Math
       const netCashD = totalAmtDiesel - (s.onlineDiesel || 0) - (s.cardDiesel || 0) - (s.creditDiesel || 0);
       const receivedCashD = notesTotalDiesel + (s.coinsDiesel || 0);
       const balanceD = netCashD - receivedCashD;
@@ -154,7 +158,6 @@ const DailyAccountingPage: React.FC = () => {
         receivedCashPetrol: receivedCashP,
         balancePetrol: balanceP,
         cashTotalPetrol: notesTotalPetrol,
-        
         netCashDiesel: netCashD,
         receivedCashDiesel: receivedCashD,
         balanceDiesel: balanceD,
@@ -162,35 +165,29 @@ const DailyAccountingPage: React.FC = () => {
       };
     }
 
-    return {
-      ...data,
-      nozzles: updatedNozzles,
-      notes: updatedNotes,
-      summary: updatedSummary,
-    };
+    return { ...data, nozzles: updatedNozzles, notes: updatedNotes, summary: updatedSummary };
   };
 
   const debouncedSave = debounce(async (values: DsrShift) => {
-    try {
-      const toSave = { ...values, date: dayjs(values.date).format('YYYY-MM-DD') };
-      await saveDsrShift(toSave);
-      message.success({ content: 'Saved', key: 'save', duration: 1 });
-    } catch (err) {
-      console.error(err);
-    }
+    const toSave = { 
+      ...values, 
+      date: dayjs(values.date).format('YYYY-MM-DD'),
+      shiftType: currentShift 
+    };
+    await saveDsrShift(toSave);
+    message.success({ content: 'Saved', key: 'save', duration: 1 });
   }, 1000);
 
   const handleValuesChange = (_: any, allValues: DsrShift) => {
+    // Merge deeply to preserve IDs
     const mergedNozzles = shiftData.nozzles.map((oldN, idx) => ({
       ...oldN,
       ...((allValues.nozzles && allValues.nozzles[idx]) || {})
     }));
-
     const mergedNotes = shiftData.notes.map((oldN, idx) => ({
       ...oldN,
       ...((allValues.notes && allValues.notes[idx]) || {})
     }));
-    
     const mergedDips = shiftData.dips.map((oldD, idx) => ({
       ...oldD,
       ...((allValues.dips && allValues.dips[idx]) || {})
@@ -203,7 +200,6 @@ const DailyAccountingPage: React.FC = () => {
         notes: mergedNotes,
         dips: mergedDips,
         summary: { ...shiftData.summary, ...allValues.summary },
-        // Explicitly preserve isClubbed if it's not in allValues (switch might handle differently)
         isClubbed: allValues.isClubbed !== undefined ? allValues.isClubbed : shiftData.isClubbed
     };
 
@@ -214,32 +210,56 @@ const DailyAccountingPage: React.FC = () => {
 
   const RenderNumber = ({ value, bold = false }: { value: number | undefined, bold?: boolean }) => (
     <span style={{ fontWeight: bold ? 'bold' : 'normal', display: 'block', textAlign: 'right' }}>
-      {typeof value === 'number' ? value.toFixed(2) : '0.00'}
+      {value?.toFixed(2) || '0.00'}
     </span>
   );
 
+  // --- DYNAMIC COLUMNS CALCULATION ---
+  const totalNozzleCols = shiftData.nozzles.length;
+  // We need to calculate how many nozzles belong to each DU for the header colspan
+  const duHeaders = config.dispensingUnits.map(du => {
+    // Count how many nozzles in the current shiftData match this DU
+    // (In case config changed, this safeguards vs crash)
+    const count = shiftData.nozzles.filter(n => n.duName === du.name).length;
+    return { name: du.name, span: count };
+  });
+
   return (
     <div style={{ padding: '20px', background: '#555', minHeight: '100vh' }}>
-      <Form
-        form={form}
-        initialValues={shiftData}
-        onValuesChange={handleValuesChange}
-        component={false}
-      >
+      <Form form={form} initialValues={shiftData} onValuesChange={handleValuesChange} component={false}>
         <div className="ledger-container">
-          {/* --- HEADER --- */}
+          
+          {/* HEADER */}
           <div className="ledger-header">
-            <Title level={3} style={{ margin: 0 }}>Om Sai Siddhi Petroleum, Kadewadi</Title>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
-              <Form.Item name="date" style={{ margin: 0 }}>
-                 <DatePicker format="DD/MM/YYYY" allowClear={false} onChange={(d) => d && loadShift(d.format('YYYY-MM-DD'))} />
-              </Form.Item>
+            <Title level={3} style={{ margin: 0 }}>{config.stationName || 'Petrol Station'}</Title>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Form.Item name="date" style={{ margin: 0 }}>
+                   <DatePicker format="DD/MM/YYYY" allowClear={false} onChange={(d) => {
+                     if(d) {
+                       const str = d.format('YYYY-MM-DD');
+                       setCurrentDate(str);
+                       loadShift(str, currentShift, config);
+                     }
+                   }} />
+                </Form.Item>
+                <Select 
+                   value={currentShift} 
+                   onChange={(val) => {
+                     setCurrentShift(val);
+                     loadShift(currentDate, val, config);
+                   }}
+                   style={{ width: 100 }}
+                >
+                  {config.shifts.map(s => <Option key={s} value={s}>{s}</Option>)}
+                </Select>
+              </div>
               <div style={{ display: 'flex', gap: 20 }}>
                   <Form.Item name="salesman1" style={{ margin: 0, width: 150 }}>
-                    <Input className="ledger-input" placeholder="Petrol Salesman" style={{borderBottom: '1px solid #ccc !important'}} />
+                    <Input className="ledger-input" placeholder="Salesman 1" style={{borderBottom: '1px solid #ccc !important'}} />
                   </Form.Item>
                   <Form.Item name="salesman2" style={{ margin: 0, width: 150 }}>
-                    <Input className="ledger-input" placeholder="Diesel Salesman" style={{borderBottom: '1px solid #ccc !important'}} />
+                    <Input className="ledger-input" placeholder="Salesman 2" style={{borderBottom: '1px solid #ccc !important'}} />
                   </Form.Item>
               </div>
             </div>
@@ -247,25 +267,29 @@ const DailyAccountingPage: React.FC = () => {
 
           <table className="ledger-table">
             <thead>
+              {/* DYNAMIC DU HEADER */}
               <tr>
-                <th rowSpan={2} width="15%">Description</th>
-                <th colSpan={2}>Petrol</th>
-                <th colSpan={2}>Diesel</th>
+                <th rowSpan={2} style={{minWidth: 150}}>Description</th>
+                {duHeaders.map(du => (
+                   du.span > 0 && <th key={du.name} colSpan={du.span}>{du.name}</th>
+                ))}
               </tr>
+              {/* DYNAMIC NOZZLE HEADER */}
               <tr>
-                <th>A1</th>
-                <th>A2</th>
-                <th>V1</th>
-                <th>V2</th>
+                {shiftData.nozzles.map((n, idx) => (
+                  <th key={idx}>
+                    {n.nozzleId} <br/>
+                    <span style={{fontSize: '0.8em', fontWeight: 'normal'}}>({n.productType})</span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {/* --- NOZZLE INPUTS --- */}
               {['startingReading', 'endingReading'].map((field) => (
                 <tr key={field}>
                   <td>{field === 'startingReading' ? 'Starting Reading' : 'Ending Reading'}</td>
                   {shiftData.nozzles.map((n, idx) => (
-                    <td key={n.key}>
+                    <td key={idx}>
                       <Form.Item name={['nozzles', idx, field]} style={{ margin: 0 }}>
                          <InputNumber className="ledger-input" controls={false} />
                       </Form.Item>
@@ -273,59 +297,46 @@ const DailyAccountingPage: React.FC = () => {
                   ))}
                 </tr>
               ))}
-              
               <tr>
                 <td>Reading Difference</td>
-                {shiftData.nozzles.map((n) => (
-                  <td key={n.key}><RenderNumber value={n.readingDiff} /></td>
-                ))}
+                {shiftData.nozzles.map((n, idx) => <td key={idx}><RenderNumber value={n.readingDiff} /></td>)}
               </tr>
-
               <tr>
                 <td>Testing Sample</td>
                 {shiftData.nozzles.map((n, idx) => (
-                  <td key={n.key}>
+                  <td key={idx}>
                     <Form.Item name={['nozzles', idx, 'testingSample']} style={{ margin: 0 }}>
                         <InputNumber className="ledger-input" controls={false} />
                     </Form.Item>
                   </td>
                 ))}
               </tr>
-
               <tr>
                 <td><strong>Total Sale (L)</strong></td>
-                {shiftData.nozzles.map((n) => (
-                  <td key={n.key}><RenderNumber value={n.netSale} bold /></td>
-                ))}
+                {shiftData.nozzles.map((n, idx) => <td key={idx}><RenderNumber value={n.netSale} bold /></td>)}
               </tr>
-
               <tr>
                 <td>Rate / Litre</td>
                 {shiftData.nozzles.map((n, idx) => (
-                  <td key={n.key}>
+                  <td key={idx}>
                     <Form.Item name={['nozzles', idx, 'rate']} style={{ margin: 0 }}>
                         <InputNumber className="ledger-input" controls={false} precision={2} />
                     </Form.Item>
                   </td>
                 ))}
               </tr>
-
               <tr>
                 <td><strong>Amount (₹)</strong></td>
-                {shiftData.nozzles.map((n) => (
-                  <td key={n.key}><RenderNumber value={n.amount} bold /></td>
-                ))}
+                {shiftData.nozzles.map((n, idx) => <td key={idx}><RenderNumber value={n.amount} bold /></td>)}
               </tr>
             </tbody>
           </table>
-            
-           {/* --- GRAND TOTAL ROW --- */}
+
+           {/* TOTAL BAR */}
            <div style={{border: '1px solid #000', borderTop: 'none', padding: '10px', background: '#e6f7ff', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px'}}>
                 <span style={{fontSize: '16px', fontWeight: 'bold'}}>
-                    GRAND TOTAL SALE: ₹ {(shiftData.summary.totalAmountPetrol + shiftData.summary.totalAmountDiesel).toFixed(2)}
+                    GRAND TOTAL: ₹ {(shiftData.summary.totalAmountPetrol + shiftData.summary.totalAmountDiesel).toFixed(2)}
                 </span>
-                
-                {/* --- TOGGLE BUTTON FOR CLUBBED ACCOUNTING --- */}
                 <div style={{display: 'flex', alignItems: 'center', gap: 8, background: '#fff', padding: '4px 10px', border: '1px solid #ccc', borderRadius: 4}}>
                    <span style={{fontWeight: 500}}>Club Accounting</span>
                    <Form.Item name="isClubbed" valuePropName="checked" style={{margin:0}}>
@@ -334,51 +345,57 @@ const DailyAccountingPage: React.FC = () => {
                 </div>
            </div>
 
-          {/* --- ACCOUNTING SPLIT SECTION --- */}
-          <table className="ledger-table section-divider">
-            <thead>
-              {shiftData.isClubbed ? (
-                <tr>
-                  <th colSpan={8} style={{background: '#d9f7be', fontSize: 16}}>
-                    COMBINED ACCOUNTING (Petrol + Diesel)
-                  </th>
-                </tr>
-              ) : (
-                <tr>
-                  <th colSpan={4} width="50%">Petrol Accounting</th>
-                  <th colSpan={4} width="50%">Diesel Accounting</th>
-                </tr>
-              )}
-            </thead>
-            <tbody>
+           {/* ACCOUNTING SECTION (Standard 50/50 Split) */}
+           {/* Even though nozzles are dynamic, accounting is usually split by Product or Combined. 
+               We maintain the 2-column block layout for the accounting section for readability. */}
+           <table className="ledger-table section-divider">
+             <thead>
+               {shiftData.isClubbed ? (
+                 <tr><th colSpan={8} style={{background: '#d9f7be'}}>COMBINED ACCOUNTING</th></tr>
+               ) : (
+                 <tr>
+                   <th colSpan={4} width="50%">Petrol Accounting</th>
+                   <th colSpan={4} width="50%">Diesel Accounting</th>
+                 </tr>
+               )}
+             </thead>
+             {/* ... The rest of the Accounting Body is identical to previous versions, 
+                 just ensure colSpan={4} aligns with the overall table width logic or 
+                 treat this table as logically separate (which it is, visually). 
+                 Note: Since we are using the SAME table element, the colSpan=4 assumes 
+                 the top table has roughly 8 columns. If dynamic nozzles > 8, this looks narrow.
+                 If dynamic nozzles < 4, this breaks layout.
+                 
+                 FIX: We should probably break the <table> here and start a new one to ensure 50% width regardless of nozzle count.
+             */}
+           </table>
+           
+           {/* Splitting the table for robustness */}
+           <table className="ledger-table" style={{borderTop: 'none'}}>
+             <tbody>
               {/* Row 1: Total Amount Headers */}
               <tr>
-                <td><strong>Total Revenue</strong></td>
+                <td width="15%"><strong>Total Revenue</strong></td>
                 {shiftData.isClubbed ? (
-                  // CLUBBED VIEW: Show Grand Total in the Left Block, merge Right Block
                    <>
                     <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
                       ₹ {(shiftData.summary.totalAmountPetrol + shiftData.summary.totalAmountDiesel).toFixed(2)}
                     </td>
-                    <td colSpan={4} style={{background: '#f0f0f0', textAlign: 'center', color: '#999'}}>
-                      (Combined)
-                    </td>
+                    <td colSpan={4} style={{background: '#f0f0f0', textAlign: 'center', color: '#999'}}>(Combined)</td>
                    </>
                 ) : (
-                  // SEPARATE VIEW
                   <>
                     <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
                       ₹ {shiftData.summary.totalAmountPetrol.toFixed(2)}
                     </td>
-                    <td><strong>Total Revenue</strong></td>
+                    <td width="15%"><strong>Total Revenue</strong></td>
                     <td colSpan={3} style={{textAlign: 'right', fontWeight: 'bold', fontSize: 16}}>
                       ₹ {shiftData.summary.totalAmountDiesel.toFixed(2)}
                     </td>
                   </>
                 )}
               </tr>
-
-              {/* Row 2: Columns Headers */}
+             {/* Row 2: Columns Headers */}
               <tr>
                 <td colSpan={2}><strong>Expenses / Receipts</strong></td>
                 <td colSpan={2} style={{textAlign:'center'}}><strong>Notes x Count = Amt</strong></td>
@@ -622,16 +639,12 @@ const DailyAccountingPage: React.FC = () => {
                     </Form.Item>
                 </td>
               </tr>
-            </tbody>
-          </table>
+             </tbody>
+           </table>
 
-          {/* Footer Buttons */}
-          <div style={{ padding: 20, textAlign: 'right' }}>
-            <Button type="primary" size="large" onClick={() => debouncedSave.flush()}>
-              Force Save Shift
-            </Button>
+           <div style={{ padding: 20, textAlign: 'right' }}>
+            <Button type="primary" size="large" onClick={() => debouncedSave.flush()}>Save Shift</Button>
           </div>
-
         </div>
       </Form>
     </div>

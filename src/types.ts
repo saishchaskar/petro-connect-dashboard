@@ -1,16 +1,38 @@
 // src/types.ts
 import { Dayjs } from 'dayjs';
 
-export interface NozzleEntry {
-  key: number;
+// --- CONFIGURATION TYPES ---
+export interface NozzleConfig {
+  id: string; // e.g., "A1", "V1"
   productType: 'Petrol' | 'Diesel';
-  nozzleId: 'A1' | 'A2' | 'V1' | 'V2';
+}
+
+export interface DispensingUnit {
+  id: number;
+  name: string; // e.g., "DU 1"
+  nozzles: NozzleConfig[];
+}
+
+export interface StationConfig {
+  stationName: string;
+  dispensingUnits: DispensingUnit[];
+  shifts: string[]; // e.g., ["Day", "Night"]
+  isConfigured: boolean;
+}
+
+// --- DSR DATA TYPES ---
+
+export interface NozzleEntry {
+  key: string; // Changed to string to combine "DUId_NozzleId"
+  duName: string; // For grouping in display
+  productType: 'Petrol' | 'Diesel';
+  nozzleId: string;
   startingReading: number;
   endingReading: number;
   testingSample: number;
   rate: number;
   
-  // Calculated fields for display
+  // Calculated fields
   readingDiff?: number;
   netSale?: number;
   amount?: number;
@@ -25,7 +47,7 @@ export interface NoteEntry {
 }
 
 export interface FinancialSummary {
-  // Petrol Side (Used as GLOBAL/COMBINED in Clubbed mode)
+  // Petrol Side
   totalAmountPetrol: number;
   onlinePetrol: number;
   cardPetrol: number;
@@ -35,7 +57,7 @@ export interface FinancialSummary {
   receivedCashPetrol: number;
   balancePetrol: number;
   
-  // Diesel Side (Ignored in Clubbed mode)
+  // Diesel Side
   totalAmountDiesel: number;
   onlineDiesel: number;
   cardDiesel: number;
@@ -61,7 +83,8 @@ export interface DipEntry {
 export interface DsrShift {
   id?: number;
   date: Dayjs | string;
-  isClubbed?: boolean; // NEW FIELD: Toggle for Combined Accounting
+  shiftType: string; // NEW: "Day" or "Night"
+  isClubbed?: boolean;
   salesman1: string;
   salesman2: string;
   nozzles: NozzleEntry[];

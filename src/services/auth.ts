@@ -1,6 +1,10 @@
 // src/services/auth.ts
 import apiClient from './api';
 
+export const getStationName = (): string => {
+  return localStorage.getItem('station_name') || 'PetroConnect';
+};
+
 export const isAppConfigured = (): boolean => {
   return localStorage.getItem('station_configured') === 'true';
 };
@@ -9,7 +13,7 @@ export const isAuthenticated = (): boolean => {
   return !!localStorage.getItem('auth_token');
 };
 
-export const logout = (): void => {
+export const logoutUser = (): void => {
   localStorage.removeItem('auth_token');
   localStorage.removeItem('username');
   // Force a reload to clear all state and redirect to login
