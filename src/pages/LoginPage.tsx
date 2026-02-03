@@ -23,6 +23,10 @@ const LoginPage: React.FC = () => {
         }
       }
 
+      if(response.station_created_at) {
+        localStorage.setItem('station_createdAt', response.station_created_at);
+      }
+
       message.success('Login Successful');
       // Hard redirect to ensure all components re-evaluate auth state
       window.location.href = '/dashboard';

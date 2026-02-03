@@ -1,24 +1,23 @@
 // src/components/AppLayout.tsx
 import React from 'react';
-import { Layout, Menu, Button, Typography, theme } from 'antd';
+import { Layout, Menu, Button, Typography } from 'antd';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { 
   LogoutOutlined, 
   DashboardOutlined, 
   SettingOutlined, 
-  ShopOutlined 
+  ShopOutlined,
+  FileTextOutlined 
 } from '@ant-design/icons';
 import { logoutUser, getStationName } from '../services/auth';
+import { Footer } from 'antd/es/layout/layout';
 
-const { Header, Content, Footer } = Layout;
+const { Header, Content } = Layout;
 const { Title } = Typography;
 
 const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken();
 
   const stationName = getStationName();
 
@@ -33,46 +32,56 @@ const AppLayout: React.FC = () => {
       label: 'Daily Accounting',
     },
     {
+      key: '/consolidated',
+      icon: <FileTextOutlined />, // Import FileTextOutlined from icons
+      label: 'Daily Sales Report',
+    },
+    {
       key: '/config',
       icon: <SettingOutlined />,
       label: 'Station Setup', // This is the link to the configuration page
     },
+    
   ];
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Header 
-        style={{ 
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
           display: 'flex', 
           alignItems: 'center', 
           justifyContent: 'space-between',
           padding: '0 24px',
-          background: '#001529'
+          background: 'rgba(255, 255, 255, 0.7)',
+          backdropFilter: 'saturate(180%) blur(10px)',
+          borderBottom: '1px solid #e8e8e8'
         }}
       >
         {/* Brand / Logo Area */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <ShopOutlined style={{ fontSize: 24, color: '#1890ff' }} />
-          <Title level={4} style={{ margin: 0, color: 'white' }}>
+          <ShopOutlined style={{ fontSize: 24, color: '#001529' }} />
+          <Title level={4} style={{ margin: 0, color: '#001529' }}>
             {stationName}
           </Title>
         </div>
 
         {/* Top Navigation Menu */}
         <Menu
-          theme="dark"
+          theme="light"
           mode="horizontal"
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={(e) => navigate(e.key)}
-          style={{ flex: 1, minWidth: 300, marginLeft: 40 }}
+          style={{ flex: 1, minWidth: 300, marginLeft: 40, background: 'transparent', borderBottom: 'none' }}
         />
 
         {/* Right Side: Logout */}
         <div>
           <Button 
-            type="primary" 
-            danger 
+            type="default"
             icon={<LogoutOutlined />} 
             onClick={handleLogout}
           >
@@ -81,14 +90,12 @@ const AppLayout: React.FC = () => {
         </div>
       </Header>
 
-      <Content style={{ padding: '24px 50px', marginTop: 16 }}>
-        <div style={{ background: colorBgContainer, minHeight: 280, padding: 24, borderRadius: 8 }}>
-          {/* This renders the child page (Dashboard or Config) */}
-          <Outlet /> 
-        </div>
+      {/* The key is crucial for triggering the animation on route change */}
+      <Content style={{ animation: 'page-fade-in 0.4s ease-out', padding: '24px' }} key={location.pathname}>
+        <Outlet /> 
       </Content>
-
-      <Footer style={{ textAlign: 'center' }}>
+      
+       <Footer style={{ textAlign: 'center' }}>
         PetroConnect ©{new Date().getFullYear()} Created by Deccan Software Pvt. Ltd.
       </Footer>
     </Layout>

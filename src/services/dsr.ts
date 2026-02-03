@@ -1,33 +1,41 @@
 // src/services/dsr.ts
-import apiClient from './api'; // Ensure this path is correct
-import dayjs from 'dayjs';
+import apiClient from './api';
 import type { DsrShift } from '../types';
 
-/**
- * Saves the entire shift object to the backend.
- */
-export const saveDsrShift = async (shift: any): Promise<DsrShift> => {
+// Check if a specific shift exists (for locking logic)
+export const checkShiftCompletion = async (date: string, shift: string): Promise<boolean> => {
   try {
-    const response = await apiClient.post('/dsr', shift);
-    return response.data;
-  } catch (error) {
-    console.error('Error saving DSR shift:', error);
-    throw error;
+    const response = await apiClient.get(`/dsr/exists`, {
+      params: { date, shift }
+    });
+    return response.data; // Expecting boolean
+  } catch (e) {
+    console.error('Error checking shift completion:', e);
+    return false;
   }
 };
 
-/**
- * Fetches a single DSR shift for a given date from the backend.
- */
-export const getDsrShift = async (date: string): Promise<DsrShift | null> => {
+// Get a single shift
+export const getDsrShift = async (date: string, shift: string): Promise<DsrShift | null> => {
   try {
-    const response = await apiClient.get(`/dsr/${date}`);
-    if (response.data) {
-      return { ...response.data, date: dayjs(response.data.date) };
-    }
-    return null;
+    const res = await apiClient.get('/dsr', {
+      params: { date, shift }
+    });
+    return res.data;
   } catch (error) {
-    console.error('Error fetching DSR shift for date ' + date, error);
-    return null; // Return null on 404 or other errors
+    // If 404, return null so the UI can create a blank shift
+    return null;
   }
+};
+
+// Save a shift
+export const saveDsrShift = async (dsr: DsrShift) => {
+  return apiClient.post('/dsr', dsr);
+};
+
+// Get Monthly Report
+export const getConsolidatedReport = async (month: number, year: number) => {
+  return apiClient.get('/dsr/consolidated', {
+    params: { month, year }
+  });
 };

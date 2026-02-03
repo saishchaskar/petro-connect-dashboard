@@ -36,6 +36,27 @@ apiClient.interceptors.response.use(
   }
 );
 
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    // IGNORE 404s (handled by service layers)
+    if (error.response?.status === 404) {
+      return Promise.reject(error);
+    }
+    
+    // Log other errors
+    console.error('API Error:', error.response?.status, error.response?.data);
+    
+    if (error.response?.status === 401) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('username');
+      window.location.href = '/login';
+    }
+    
+    return Promise.reject(error);
+  }
+);
+
 export default apiClient;
 
 // We will move the DSR functions to their own service file later for better organization.

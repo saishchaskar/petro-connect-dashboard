@@ -9,6 +9,8 @@ import type { StationConfig } from '../types';
 const { Title, Text } = Typography;
 const { Option } = Select;
 
+let duIdCounter = Date.now();
+
 const StationConfigPage: React.FC = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
@@ -66,7 +68,7 @@ const StationConfigPage: React.FC = () => {
                       </Col>
                       <Col span={12}>
                          {/* Hidden ID field */}
-                         <Form.Item name={[field.name, 'id']} initialValue={Date.now() + index} noStyle>
+                         <Form.Item name={[field.name, 'id']} initialValue={`new_${duIdCounter++}`} noStyle>
                             <Input type="hidden" />
                          </Form.Item>
                       </Col>

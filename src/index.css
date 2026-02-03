@@ -1,67 +1,105 @@
 /* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* Ledger Table Styles */
-.ledger-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  border: 2px solid #000;
-  font-family: 'Courier New', Courier, monospace; /* Monospace looks more like a printed receipt/ledger */
-  background: white;
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #f4f5f7;
 }
 
-.ledger-header {
-  text-align: center;
-  border-bottom: 2px solid #000;
-  padding: 10px;
-  background: #f0f0f0;
+/* --- Page Transition Animation --- */
+@keyframes page-fade-in {
+  from {
+    opacity: 0.8;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* The Main Grid */
-.ledger-table {
+
+/* --- The Ledger Table (Excel-like Grid) --- */
+.accounting-table {
   width: 100%;
   border-collapse: collapse;
+  background: white;
+  font-size: 13px;
+  table-layout: fixed; /* Ensures columns don't jump */
 }
 
-.ledger-table th, .ledger-table td {
-  border: 1px solid #000;
-  padding: 4px;
+.accounting-table th, 
+.accounting-table td {
+  border: 1px solid #e0e0e0;
+  padding: 4px 8px;
   vertical-align: middle;
 }
 
-.ledger-table th {
-  background-color: #e6e6e6;
-  font-weight: bold;
+/* Headers */
+.accounting-table thead th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-align: center;
 }
 
-/* Input Styling to look like written text */
-.ledger-input {
-  width: 100%;
-  border: none !important;
-  background: transparent !important;
+/* Input Styling - Spreadsheet feel */
+.sheet-input {
+  width: 100% !important;
+  font-family: 'JetBrains Mono', monospace !important;
   text-align: right;
-  font-weight: 500;
-  padding: 0 !important;
+  border: 1px solid transparent !important; /* Invisible border by default */
+  background: transparent !important;
   box-shadow: none !important;
+  padding: 0 !important;
+  height: 28px;
 }
 
-.ledger-input:focus {
-  background: #e6f7ff !important;
+.sheet-input:hover, 
+.sheet-input:focus, 
+.sheet-input-focused {
+  border: 1px solid #1890ff !important;
+  background: #fff !important;
+  border-radius: 2px;
 }
 
-/* Removing number spinners */
-input::-webkit-outer-spin-button,
-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+.sheet-input input {
+  text-align: right;
 }
 
-.section-divider {
-  border-top: 2px solid #000;
+/* Read-only / Calculated Cells */
+.calc-cell {
+  font-family: 'JetBrains Mono', monospace;
+  text-align: right;
+  color: #334155;
+  padding-right: 11px !important; /* Align with input padding */
 }
 
-.no-border-bottom {
-  border-bottom: none !important;
+.calc-cell.bold {
+  font-weight: 700;
+  color: #0f172a;
 }
-.no-border-top {
-  border-top: none !important;
+
+/* Row Highlights */
+.row-header {
+  background-color: #f8fafc;
+  font-weight: 500;
+  color: #475569;
 }
+
+.section-header-row th {
+  background-color: #e2e8f0;
+  color: #1e293b;
+  font-size: 12px;
+  padding: 8px;
+  text-align: left;
+}
+
+/* Product Colors */
+.th-petrol { border-top: 3px solid #faad14 !important; background: #fffbe6 !important; }
+.th-diesel { border-top: 3px solid #1890ff !important; background: #e6f7ff !important; }
