@@ -13,7 +13,6 @@ import {
   LeftOutlined
 } from '@ant-design/icons';
 import { registerStation } from '../services/auth';
-import '../index.css';
 
 
 const { Title, Text } = Typography;

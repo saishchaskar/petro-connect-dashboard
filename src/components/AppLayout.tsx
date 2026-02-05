@@ -35,8 +35,8 @@ const AppLayout: React.FC = () => {
   );
 
   return (
-    // IMPORTANT: Outer layout is fixed to screen height and doesn't scroll
-    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+    // Allow outer layout to expand and let body handle scroll
+    <Layout style={{ minHeight: '100vh' }}> {/* minHeight to ensure footer is at bottom if content is short */}
       
       {/* HEADER - Fixed top anchor */}
       <Header 
@@ -85,10 +85,8 @@ const AppLayout: React.FC = () => {
       </Header>
 
       {/* CONTENT BODY - This area scrolls independently */}
-      <Content style={{ 
-          // Calculate height: Screen - Header - Footer
-          height: `calc(100vh - ${HEADER_HEIGHT + FOOTER_HEIGHT}px)`, 
-          overflowY: 'auto', // Scrollbar appears here
+      <Content style={{
+          // Content will now expand naturally, body will scroll
           overflowX: 'hidden',
           padding: '16px 24px', // Fixed padding instead of huge margins
           position: 'relative'

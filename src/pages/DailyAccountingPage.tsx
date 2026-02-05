@@ -276,7 +276,7 @@ const DailyAccountingPage: React.FC = () => {
   };
 
   return (
-    <div className="page-container">
+    <div className="page-container" style={{ display: 'flex', flexDirection: 'column', background: '#f0f2f5' }}> {/* Removed height: '100vh' */}
         <Form form={form} initialValues={shiftData} component={false} onValuesChange={() => { if (debouncedSaveRef.current) debouncedSaveRef.current(); }}>
             
             <div className="sticky-header">
@@ -299,7 +299,7 @@ const DailyAccountingPage: React.FC = () => {
                 </div>
             </div>
 
-            <div >
+            <div style={{ padding: '24px' }}> {/* Removed flexGrow: 1 and overflowY: 'auto' */}
                 {/* 1. FAST PUMP READINGS (Memoized) */}
                 <PumpReadingsSection 
                     shiftData={shiftData} 
