@@ -1,102 +1,111 @@
-// src/components/AppLayout.tsx
 import React from 'react';
-import { Layout, Menu, Button, Typography } from 'antd';
+import { Layout, Menu, Button, Typography, Space, Avatar, Dropdown } from 'antd';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { 
-  LogoutOutlined, 
-  DashboardOutlined, 
-  SettingOutlined, 
-  ShopOutlined,
-  FileTextOutlined 
+  LogoutOutlined, DashboardOutlined, SettingOutlined, ShopOutlined,
+  FileTextOutlined, BarChartOutlined, UserOutlined, DownOutlined
 } from '@ant-design/icons';
 import { logoutUser, getStationName } from '../services/auth';
-import { Footer } from 'antd/es/layout/layout';
 
-const { Header, Content } = Layout;
-const { Title } = Typography;
+// Define Header height constant for calculations
+const HEADER_HEIGHT = 64;
+const FOOTER_HEIGHT = 40;
+
+const { Header, Content, Footer } = Layout;
+const { Text } = Typography;
 
 const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-
   const stationName = getStationName();
 
-  const handleLogout = () => {
-    logoutUser();
-  };
+  const handleLogout = () => logoutUser();
 
   const menuItems = [
-    {
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'Daily Accounting',
-    },
-    {
-      key: '/consolidated',
-      icon: <FileTextOutlined />, // Import FileTextOutlined from icons
-      label: 'Daily Sales Report',
-    },
-    {
-      key: '/config',
-      icon: <SettingOutlined />,
-      label: 'Station Setup', // This is the link to the configuration page
-    },
-    
+    { key: '/dashboard', icon: <DashboardOutlined />, label: 'Daily Accounting' },
+    { key: '/consolidated', icon: <FileTextOutlined />, label: 'Sales Report' },
+    { key: '/analytics', icon: <BarChartOutlined />, label: 'Analytics' },
+    { key: '/config', icon: <SettingOutlined />, label: 'Station Setup' },
   ];
 
+  const userMenu = (
+    <Menu items={[
+      { key: '3', label: 'Logout', icon: <LogoutOutlined />, danger: true, onClick: handleLogout }
+    ]} />
+  );
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    // IMPORTANT: Outer layout is fixed to screen height and doesn't scroll
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+      
+      {/* HEADER - Fixed top anchor */}
       <Header 
         style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '0 24px',
-          background: 'rgba(255, 255, 255, 0.7)',
-          backdropFilter: 'saturate(180%) blur(10px)',
-          borderBottom: '1px solid #e8e8e8'
+          background: 'var(--bpcl-blue)', // Keep the strong brand anchor
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)', // Sharper shadow
+          height: HEADER_HEIGHT,
+          lineHeight: `${HEADER_HEIGHT}px`,
+          zIndex: 10
         }}
       >
-        {/* Brand / Logo Area */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <ShopOutlined style={{ fontSize: 24, color: '#001529' }} />
-          <Title level={4} style={{ margin: 0, color: '#001529' }}>
-            {stationName}
-          </Title>
+         {/* Branding Area */}
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: 240 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 20 }}>
+             {/* Orange accent for the logo mark */}
+            <div style={{ background: 'var(--iocl-orange)', height: 28, width: 28, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ShopOutlined style={{ color: 'white', fontSize: 16 }} />
+            </div>
+            <Text strong style={{ color: 'white', fontSize: 18, letterSpacing: 0.5, fontFamily: 'Inter' }}>PetroConnect</Text>
+          </div>
+          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.3)', marginRight: 20 }}></div>
+          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }} ellipsis>{stationName}</Text>
         </div>
 
-        {/* Top Navigation Menu */}
+        {/* Navigation */}
         <Menu
-          theme="light"
-          mode="horizontal"
-          selectedKeys={[location.pathname]}
-          items={menuItems}
-          onClick={(e) => navigate(e.key)}
-          style={{ flex: 1, minWidth: 300, marginLeft: 40, background: 'transparent', borderBottom: 'none' }}
+          theme="dark" mode="horizontal" selectedKeys={[location.pathname]} items={menuItems} onClick={(e) => navigate(e.key)}
+          className="enterprise-nav"
+          style={{ background: 'transparent', borderBottom: 'none', flex: 1, justifyContent: 'center' }}
         />
 
-        {/* Right Side: Logout */}
-        <div>
-          <Button 
-            type="default"
-            icon={<LogoutOutlined />} 
-            onClick={handleLogout}
-          >
-            Logout
-          </Button>
+        {/* User Profile */}
+        <div style={{ minWidth: 150, display: 'flex', justifyContent: 'flex-end' }}>
+          <Dropdown overlay={userMenu} trigger={['click']}>
+            <Button type="text" style={{ color: 'white', height: HEADER_HEIGHT }}>
+              <Space>
+                <Avatar size="small" style={{ backgroundColor: 'var(--iocl-orange)' }}>M</Avatar>
+                <Text style={{ color: 'white', fontSize: 13 }}>Manager</Text>
+                <DownOutlined style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }} />
+              </Space>
+            </Button>
+          </Dropdown>
         </div>
       </Header>
 
-      {/* The key is crucial for triggering the animation on route change */}
-      <Content style={{ animation: 'page-fade-in 0.4s ease-out', padding: '24px' }} key={location.pathname}>
-        <Outlet /> 
+      {/* CONTENT BODY - This area scrolls independently */}
+      <Content style={{ 
+          // Calculate height: Screen - Header - Footer
+          height: `calc(100vh - ${HEADER_HEIGHT + FOOTER_HEIGHT}px)`, 
+          overflowY: 'auto', // Scrollbar appears here
+          overflowX: 'hidden',
+          padding: '16px 24px', // Fixed padding instead of huge margins
+          position: 'relative'
+      }}>
+        {/* A container that allows full width but prevents extreme stretching on 4k screens */}
+        <div style={{ width: '100%', maxWidth: '1800px', margin: '0 auto' }}>
+             <Outlet /> 
+        </div>
       </Content>
       
-       <Footer style={{ textAlign: 'center' }}>
-        PetroConnect ©{new Date().getFullYear()} Created by Deccan Software Pvt. Ltd.
+      {/* FOOTER - Fixed at bottom */}
+       <Footer style={{ 
+           textAlign: 'center', color: '#666', fontSize: 11, 
+           padding: '0px', height: FOOTER_HEIGHT, lineHeight: `${FOOTER_HEIGHT}px`,
+           background: '#e1e6eb', borderTop: '1px solid #d0d7e0'
+       }}>
+        PetroConnect Enterprise v2.5 | © {new Date().getFullYear()}
       </Footer>
     </Layout>
   );

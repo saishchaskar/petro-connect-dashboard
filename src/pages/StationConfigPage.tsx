@@ -1,7 +1,8 @@
 // src/pages/StationConfigPage.tsx
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Space, Select, Typography, Divider, message, Row, Col } from 'antd';
+import { Form, Input, Button, Card, Space, Select, Typography, Divider, message, Row, Col, Modal } from 'antd';
 import { PlusOutlined, MinusCircleOutlined, SaveOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { getStationConfig, saveStationConfig } from '../services/config';
 import type { StationConfig } from '../types';
@@ -14,18 +15,34 @@ let duIdCounter = Date.now();
 const StationConfigPage: React.FC = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [isFirstDayOfMonth, setIsFirstDayOfMonth] = useState(false);
 
   useEffect(() => {
     const config = getStationConfig();
     form.setFieldsValue(config);
+
+    // Check if today is the 1st day of the month
+    const today = dayjs();
+    setIsFirstDayOfMonth(today.date() === 1);
   }, [form]);
 
   const onFinish = (values: StationConfig) => {
-    // Ensure shifts are set if not in form
-    const finalConfig = { ...values, shifts: ['Day', 'Night'] };
-    saveStationConfig(finalConfig);
-    message.success('Station Configuration Saved Successfully!');
-    navigate('/dashboard');
+    Modal.confirm({
+      title: 'Confirm Save Changes',
+      content: 'Are you sure you want to save these station configuration changes?',
+      okText: 'Save',
+      cancelText: 'Cancel',
+      onOk: () => {
+        // Ensure shifts are set if not in form
+        const finalConfig = { ...values, shifts: ['Day', 'Night'] };
+        saveStationConfig(finalConfig);
+        message.success('Station Configuration Saved Successfully!');
+        navigate('/dashboard');
+      },
+      onCancel: () => {
+        message.info('Save cancelled.');
+      },
+    });
   };
 
   return (
@@ -43,15 +60,20 @@ const StationConfigPage: React.FC = () => {
           <Form.Item label="Station Name" name="stationName" rules={[{ required: true }]}>
             <Input placeholder="Enter Station Name" size="large" />
           </Form.Item>
-
+          
           <Divider orientation="left">Dispensing Units (DUs) & Nozzles</Divider>
+          {!isFirstDayOfMonth && (
+            <Text type="warning" style={{ marginBottom: 15, display: 'block' }}>
+              <MinusCircleOutlined /> DUs and Nozzles can only be removed on the 1st day of the month to ensure accurate daily sales report calculations.
+            </Text>
+          )}
           
           <Form.List name="dispensingUnits">
             {(fields, { add, remove }) => (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {fields.map((field, index) => (
                   <Card key={field.key} type="inner" title={`Dispensing Unit ${index + 1}`} extra={
-                    <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)}>
+                    <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} disabled={!isFirstDayOfMonth}>
                       Remove DU
                     </Button>
                   }>
@@ -99,7 +121,7 @@ const StationConfigPage: React.FC = () => {
                                   <Option value="Diesel">Diesel</Option>
                                 </Select>
                               </Form.Item>
-                              <MinusCircleOutlined onClick={() => removeNozzle(nf.name)} />
+                              <MinusCircleOutlined onClick={() => removeNozzle(nf.name)} disabled={!isFirstDayOfMonth} />
                             </Space>
                           ))}
                           <Form.Item>

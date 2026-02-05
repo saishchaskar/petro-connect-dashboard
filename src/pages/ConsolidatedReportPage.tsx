@@ -7,6 +7,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getConsolidatedReport } from '../services/dsr';
 import { getStationName } from '../services/auth';
+import '../index.css';
+
 
 const { Title, Text } = Typography;
 

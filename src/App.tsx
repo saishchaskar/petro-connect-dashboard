@@ -1,5 +1,4 @@
 // src/App.tsx
-import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import DailyAccountingPage from './pages/DailyAccountingPage';
 import RegistrationPage from './pages/RegistrationPage';
@@ -7,7 +6,9 @@ import LoginPage from './pages/LoginPage';
 import StationConfigPage from './pages/StationConfigPage';
 import ConsolidatedReportPage from './pages/ConsolidatedReportPage';
 import AppLayout from './components/AppLayout';
+// Import the image directly to ensure it's processed by the build system
 import { isAppConfigured, isAuthenticated } from './services/auth';
+import AnalyticsPage from './pages/AnalyticsPage';
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   if (!isAppConfigured()) return <Navigate to="/register" replace />;
@@ -17,6 +18,9 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
 function App() {
   return (
+    // Use useEffect to set the background image as a CSS variable on the body
+    // This ensures the image URL is resolved by Webpack/Vite and applied dynamically.
+
     <BrowserRouter>
       <Routes>
         <Route path="/register" element={<RegistrationPage />} />
@@ -30,6 +34,7 @@ function App() {
         }>
             <Route path="/dashboard" element={<DailyAccountingPage />} />
             <Route path="/consolidated" element={<ConsolidatedReportPage />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/config" element={<StationConfigPage />} />
         </Route>
         

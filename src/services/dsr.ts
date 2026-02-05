@@ -1,6 +1,6 @@
 // src/services/dsr.ts
 import apiClient from './api';
-import type { DsrShift } from '../types';
+import type { DsrShift, AnalyticsData } from '../types';
 
 // Check if a specific shift exists (for locking logic)
 export const checkShiftCompletion = async (date: string, shift: string): Promise<boolean> => {
@@ -39,3 +39,13 @@ export const getConsolidatedReport = async (month: number, year: number) => {
     params: { month, year }
   });
 };
+
+export const getAnalyticsData = async (startDate: string, endDate: string): Promise<AnalyticsData[]> => {
+  const res = await apiClient.get('/dsr/analytics', {
+    params: { startDate, endDate }
+  });
+  return res.data;
+};
+
+
+

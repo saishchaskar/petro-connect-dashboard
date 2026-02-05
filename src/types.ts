@@ -70,6 +70,14 @@ export interface FinancialSummary {
   cashTotalPetrol: number;
   cashTotalDiesel: number;
 }
+export interface AnalyticsData {
+  date: string;
+  petrolVolume: number;
+  petrolAmount: number;
+  dieselVolume: number;
+  dieselAmount: number;
+  totalRevenue: number;
+}
 
 export interface DipEntry {
   productType: 'Petrol' | 'Diesel';
