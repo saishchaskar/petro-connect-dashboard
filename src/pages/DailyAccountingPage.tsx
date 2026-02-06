@@ -14,10 +14,62 @@ import '../index.css';
 
 const STATION_REGISTRATION_DATE = '2026-01-01'; 
 const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
-const AUTO_SAVE_DELAY = 5000;
+const AUTO_SAVE_DELAY = 1000;
 
-const fmt = (val: number | undefined | null) => (val || 0).toFixed(2);
+// Helper: Format currency with commas (e.g., 1,25,000.00)
+const fmtMoney = (val: number | undefined | null) => 
+    (val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const fmtInt = (val: number | undefined | null) => (val || 0).toFixed(0);
+const fmt = (val: number | undefined | null) => (val || 0).toFixed(2);
+
+// --- HELPER: Formatter for Financial Inputs (Commas) ---
+const formatFinancial = (value: number | string | undefined) => {
+    if (value === undefined || value === null) return '';
+    const list = `${value}`.split('.');
+    const prefix = list[0].charAt(0) === '-' ? '-' : '';
+    let num = prefix ? list[0].slice(1) : list[0];
+    let result = '';
+    while (num.length > 3) {
+        result = `,${num.slice(-3)}${result}`;
+        num = num.slice(0, num.length - 3);
+    }
+    if (num) { result = num + result; }
+    return `${prefix}${result}${list[1] ? `.${list[1]}` : ''}`;
+};
+
+const parseFinancial = (value: string | undefined) => {
+    return value ? value.replace(/,/g, '') : '';
+};
+
+// --- COMPONENT: CellInput ---
+// Prop 'format' controls if we show commas or not.
+const CellInput = ({ 
+    name, 
+    style = {}, 
+    disabled,
+    format = 'number' // 'number' = plain, 'financial' = commas
+}: { 
+    name: any, 
+    style?: React.CSSProperties, 
+    disabled?: boolean,
+    format?: 'number' | 'financial'
+}) => (
+  <Form.Item name={name} style={{ margin: 0 }}>
+      <InputNumber 
+          className="sheet-input" 
+          controls={false} 
+          stringMode={false} 
+          style={style} 
+          disabled={disabled} 
+          // Only apply comma formatter if it is a financial field
+          formatter={format === 'financial' ? formatFinancial : undefined}
+          parser={format === 'financial' ? (parseFinancial as any) : undefined}
+          onFocus={(e) => e.target.select()} 
+          onWheel={(e) => e.currentTarget.blur()} 
+      />
+  </Form.Item>
+);
 
 const getInitialShift = (config: StationConfig, dateStr: string, shiftType: string): DsrShift => {
   const allNozzles = config.dispensingUnits.flatMap(du => 
@@ -151,6 +203,26 @@ const DailyAccountingPage: React.FC = () => {
       return { ...data, nozzles: updatedNozzles, notes: updatedNotes, summary: updatedSummary };
   };
 
+  const handleValuesChange = (changedValues: any, allValues: any) => {
+      const mergedNozzles = shiftData.nozzles.map((orig, idx) => ({ ...orig, ...(allValues.nozzles?.[idx] || {}) }));
+      const mergedNotes = shiftData.notes.map((orig, idx) => ({ ...orig, ...(allValues.notes?.[idx] || {}) }));
+      const mergedDips = shiftData.dips.map((orig, idx) => ({ ...orig, ...(allValues.dips?.[idx] || {}) }));
+
+      mergedNozzles.forEach(n => {
+          if (n.productType === 'Petrol') n.rate = petrolRate;
+          if (n.productType === 'Diesel') n.rate = dieselRate;
+      });
+
+      const payload = { 
+          ...shiftData, ...allValues, nozzles: mergedNozzles, notes: mergedNotes, dips: mergedDips,
+          summary: { ...shiftData.summary, ...(allValues.summary || {}) } 
+      };
+
+      const calculated = calculateAll(payload);
+      setShiftData(calculated);
+      if (debouncedSaveRef.current) debouncedSaveRef.current();
+  };
+
   const validateShiftBeforeSave = (data: DsrShift): boolean => {
     const errors: string[] = [];
     data.nozzles.forEach(n => {
@@ -190,7 +262,7 @@ const DailyAccountingPage: React.FC = () => {
     try {
       const finalPayload = await prepareDataForSave();
       if (!validateShiftBeforeSave(finalPayload)) { setIsSaving(false); return; }
-      setShiftData(finalPayload);
+      setShiftData(finalPayload); 
       form.setFieldsValue(finalPayload);
       await saveDsrShift(finalPayload);
       message.success('Auto-saved');
@@ -222,13 +294,6 @@ const DailyAccountingPage: React.FC = () => {
 
   const canGoBack = dayjs(currentDate).isAfter(REGISTRATION_DATE) || (dayjs(currentDate).isSame(REGISTRATION_DATE) && currentShift === 'Night');
 
-  // Smaller components for the renderCollectionTable
-  const CellInput = ({ name, precision = 0, style = {} }: { name: any, precision?: number, style?: React.CSSProperties }) => (
-    <Form.Item name={name} style={{ margin: 0 }}>
-        <InputNumber className="sheet-input" controls={false} precision={precision} stringMode={false} style={style} disabled={isLocked} onFocus={(e) => e.target.select()} onWheel={(e) => e.currentTarget.blur()} />
-    </Form.Item>
-  );
-
   const renderCollectionTable = (type: 'Petrol' | 'Diesel') => {
       return (
         <table className="accounting-table">
@@ -242,42 +307,42 @@ const DailyAccountingPage: React.FC = () => {
             <tbody>
                 <tr>
                     <td>Online (UPI)</td>
-                    <td><CellInput name={['summary', `online${type}`]} precision={2} /></td>
+                    <td><CellInput name={['summary', `online${type}`]} disabled={isLocked} format="financial" /></td>
                     <td rowSpan={8} style={{verticalAlign: 'top', padding: 0}}>
                         <table style={{width: '100%', borderCollapse: 'collapse'}}>
                             <tbody>
                                 {shiftData.notes.map((note, idx) => (
                                     <tr key={note.denomination} style={{borderBottom: '1px solid #f0f0f0'}}>
                                         <td style={{padding: '2px 5px', fontSize: 13, color: '#666'}}>{note.denomination} x</td>
-                                        <td style={{padding: 0}}><CellInput name={['notes', idx, `count${type}`]} precision={0} style={{height: 24, fontSize: 13}} /></td>
+                                        <td style={{padding: 0}}><CellInput name={['notes', idx, `count${type}`]} style={{height: 24, fontSize: 13}} disabled={isLocked} format="number" /></td>
                                         <td style={{textAlign:'right', padding: '2px 5px', fontSize: 13, width: 60}}>{fmtInt(type === 'Petrol' ? note.amountPetrol : note.amountDiesel)}</td>
                                     </tr>
                                 ))}
                                 <tr style={{background: '#f9f9f9'}}>
                                     <td style={{padding: '2px 5px', fontSize: 13, fontWeight: 'bold'}}>Coins</td>
-                                    <td colSpan={2} style={{padding: 0}}><CellInput name={['summary', `coins${type}`]} precision={2} style={{height: 24}} /></td>
+                                    <td colSpan={2} style={{padding: 0}}><CellInput name={['summary', `coins${type}`]} style={{height: 24}} disabled={isLocked} format="financial" /></td>
                                 </tr>
                                 <tr style={{background: '#e6f7ff', borderTop: '1px solid #91d5ff'}}>
                                     <td colSpan={2} style={{padding: '4px', fontWeight: 'bold', fontSize: 13, color: '#0050b3'}}>TOTAL CASH</td>
-                                    <td style={{textAlign:'right', padding: '4px', fontWeight: 'bold', fontSize: 13, color: '#0050b3'}}>{fmt(type === 'Petrol' ? shiftData.summary.cashTotalPetrol : shiftData.summary.cashTotalDiesel)}</td>
+                                    <td style={{textAlign:'right', padding: '4px', fontWeight: 'bold', fontSize: 13, color: '#0050b3'}}>{fmtMoney(type === 'Petrol' ? shiftData.summary.cashTotalPetrol : shiftData.summary.cashTotalDiesel)}</td>
                                 </tr>
                             </tbody>
                         </table>
                     </td>
                 </tr>
-                <tr><td>Credit Card</td><td><CellInput name={['summary', `card${type}`]} precision={2} /></td></tr>
-                <tr><td>Credit (Udhaar)</td><td><CellInput name={['summary', `credit${type}`]} precision={2} /></td></tr>
-                <tr style={{background: '#f8fafc'}}><td style={{fontSize: 13}}>Expected Cash</td><td className="calc-cell">{fmt(shiftData.summary[`netCash${type}` as keyof FinancialSummary] as number)}</td></tr>
-                <tr style={{background: '#f8fafc'}}><td style={{fontSize: 13}}>Actual Cash</td><td className="calc-cell bold">{fmt(shiftData.summary[`receivedCash${type}` as keyof FinancialSummary] as number)}</td></tr>
-                <tr><td style={{fontWeight:'bold'}}>Short/Excess</td><td className="calc-cell bold" style={{fontSize: 14, color: (shiftData.summary[`balance${type}` as keyof FinancialSummary] as number) > 0 ? '#ef4444' : '#22c55e'}}>{fmt(shiftData.summary[`balance${type}` as keyof FinancialSummary] as number)}</td></tr>
+                <tr><td>Credit Card</td><td><CellInput name={['summary', `card${type}`]} disabled={isLocked} format="financial" /></td></tr>
+                <tr><td>Credit (Udhaar)</td><td><CellInput name={['summary', `credit${type}`]} disabled={isLocked} format="financial" /></td></tr>
+                <tr style={{background: '#f8fafc'}}><td style={{fontSize: 13}}>Expected Cash</td><td className="calc-cell">{fmtMoney(shiftData.summary[`netCash${type}` as keyof FinancialSummary] as number)}</td></tr>
+                <tr style={{background: '#f8fafc'}}><td style={{fontSize: 13}}>Actual Cash</td><td className="calc-cell bold">{fmtMoney(shiftData.summary[`receivedCash${type}` as keyof FinancialSummary] as number)}</td></tr>
+                <tr><td style={{fontWeight:'bold'}}>Short/Excess</td><td className="calc-cell bold" style={{fontSize: 14, color: (shiftData.summary[`balance${type}` as keyof FinancialSummary] as number) > 0 ? '#ef4444' : '#22c55e'}}>{fmtMoney(shiftData.summary[`balance${type}` as keyof FinancialSummary] as number)}</td></tr>
             </tbody>    
         </table>
       );
   };
 
   return (
-    <div className="page-container" style={{ display: 'flex', flexDirection: 'column', background: '#f0f2f5' }}> {/* Removed height: '100vh' */}
-        <Form form={form} initialValues={shiftData} component={false} onValuesChange={() => { if (debouncedSaveRef.current) debouncedSaveRef.current(); }}>
+    <div className="page-container" style={{ display: 'flex', flexDirection: 'column', background: '#f0f2f5' }}>
+        <Form form={form} initialValues={shiftData} component={false} onValuesChange={handleValuesChange}>
             
             <div className="sticky-header">
                 <div style={{display:'flex', gap: 10}}>
@@ -299,8 +364,7 @@ const DailyAccountingPage: React.FC = () => {
                 </div>
             </div>
 
-            <div style={{ padding: '24px' }}> {/* Removed flexGrow: 1 and overflowY: 'auto' */}
-                {/* 1. FAST PUMP READINGS (Memoized) */}
+            <div style={{ padding: '24px' }}>
                 <PumpReadingsSection 
                     shiftData={shiftData} 
                     petrolRate={petrolRate} 
@@ -309,7 +373,6 @@ const DailyAccountingPage: React.FC = () => {
                     onRateChange={handleGlobalRateChange}
                 />
 
-                {/* 2. ACCOUNTING SECTION */}
                 <div className="industrial-card">
                     <div className="toggle-container">
                         <Form.Item name="isClubbed" valuePropName="checked" noStyle>
@@ -320,17 +383,17 @@ const DailyAccountingPage: React.FC = () => {
                     <div className="accounting-grid">
                         {shiftData.isClubbed ? (
                             <div className="full-width-panel">
-                                <div className="panel-header revenue"><span>COMBINED REVENUE</span><span>₹ {fmt((shiftData.summary.totalAmountPetrol||0) + (shiftData.summary.totalAmountDiesel||0))}</span></div>
+                                <div className="panel-header revenue"><span>COMBINED REVENUE</span><span>₹ {fmtMoney((shiftData.summary.totalAmountPetrol||0) + (shiftData.summary.totalAmountDiesel||0))}</span></div>
                                 {renderCollectionTable('Petrol')} 
                             </div>
                         ) : (
                             <>
                                 <div>
-                                    <div className="panel-header petrol"><span>PETROL REVENUE</span><span>₹ {fmt(shiftData.summary.totalAmountPetrol)}</span></div>
+                                    <div className="panel-header petrol"><span>PETROL REVENUE</span><span>₹ {fmtMoney(shiftData.summary.totalAmountPetrol)}</span></div>
                                     {renderCollectionTable('Petrol')}
                                 </div>
                                 <div>
-                                    <div className="panel-header diesel"><span>DIESEL REVENUE</span><span>₹ {fmt(shiftData.summary.totalAmountDiesel)}</span></div>
+                                    <div className="panel-header diesel"><span>DIESEL REVENUE</span><span>₹ {fmtMoney(shiftData.summary.totalAmountDiesel)}</span></div>
                                     {renderCollectionTable('Diesel')}
                                 </div>
                             </>
@@ -338,7 +401,6 @@ const DailyAccountingPage: React.FC = () => {
                     </div>
                 </div>
 
-                {/* 3. DIP READING */}
                 <div className="industrial-card">
                     <Divider orientation="left" style={{margin: '10px 0', fontSize: 12}}>Stock Dip Reading</Divider>
                     <table className="accounting-table">
@@ -347,9 +409,9 @@ const DailyAccountingPage: React.FC = () => {
                         </thead>
                         <tbody>
                             <tr><td className="row-header" style={{borderLeft: '4px solid #faad14'}}>PETROL</td>
-                                <td><CellInput name={['dips', 0, 'startingDip']} precision={0} /></td><td><CellInput name={['dips', 0, 'density']} precision={1} /></td><td><CellInput name={['dips', 0, 'temperature']} precision={1} /></td><td><CellInput name={['dips', 0, 'saleOrStock']} precision={0} /></td></tr>
+                                <td><CellInput name={['dips', 0, 'startingDip']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 0, 'density']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 0, 'temperature']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 0, 'saleOrStock']} disabled={isLocked} format="number" /></td></tr>
                             <tr><td className="row-header" style={{borderLeft: '4px solid #003399'}}>DIESEL</td>
-                                <td><CellInput name={['dips', 1, 'startingDip']} precision={0} /></td><td><CellInput name={['dips', 1, 'density']} precision={1} /></td><td><CellInput name={['dips', 1, 'temperature']} precision={1} /></td><td><CellInput name={['dips', 1, 'saleOrStock']} precision={0} /></td></tr>
+                                <td><CellInput name={['dips', 1, 'startingDip']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 1, 'density']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 1, 'temperature']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 1, 'saleOrStock']} disabled={isLocked} format="number" /></td></tr>
                         </tbody>
                     </table>
                  </div>

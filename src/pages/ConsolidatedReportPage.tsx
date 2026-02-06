@@ -1,7 +1,6 @@
-// src/pages/ConsolidatedReportPage.tsx
 import React, { useState, useEffect } from 'react';
 import { Table, DatePicker, Button, Typography, message, Card } from 'antd';
-import { FilePdfOutlined } from '@ant-design/icons';
+import { FilePdfOutlined, CalendarOutlined, BarChartOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -9,8 +8,14 @@ import { getConsolidatedReport } from '../services/dsr';
 import { getStationName } from '../services/auth';
 import '../index.css';
 
-
 const { Title, Text } = Typography;
+
+// Helper for currency formatting (Commas + 2 decimals)
+const fmtMoney = (val: number | undefined) => 
+    (val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Helper for volume (No commas, just 2 decimals)
+const fmtVol = (val: number | undefined) => (val || 0).toFixed(2);
 
 const ConsolidatedReportPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -59,30 +64,28 @@ const ConsolidatedReportPage: React.FC = () => {
     // Table Data
     const tableBody = data.map(row => [
         dayjs(row.date).format('DD/MM'),
-        row.shiftType,
-        row.petrolVolume?.toFixed(2),
-        row.petrolRate?.toFixed(2),
-        row.petrolAmount?.toFixed(2),
-        row.dieselVolume?.toFixed(2),
-        row.dieselRate?.toFixed(2),
-        row.dieselAmount?.toFixed(2),
-        row.totalAmount?.toFixed(2)
+        fmtVol(row.petrolVolume),
+        fmtVol(row.petrolRate),
+        fmtMoney(row.petrolAmount),
+        fmtVol(row.dieselVolume),
+        fmtVol(row.dieselRate),
+        fmtMoney(row.dieselAmount),
+        fmtMoney(row.totalAmount)
     ]);
 
     // Footer Row
     tableBody.push([
-        'TOTAL', '',
-        totalPVol.toFixed(2), '', totalPAmt.toFixed(2),
-        totalDVol.toFixed(2), '', totalDAmt.toFixed(2),
-        grandTotal.toFixed(2)
+        'TOTAL',
+        fmtVol(totalPVol), '', fmtMoney(totalPAmt),
+        fmtVol(totalDVol), '', fmtMoney(totalDAmt),
+        fmtMoney(grandTotal)
     ]);
 
     autoTable(doc, {
         head: [[
             { content: 'Date', rowSpan: 2, styles: { valign: 'middle' } },
-            { content: 'Shift', rowSpan: 2, styles: { valign: 'middle' } },
-            { content: 'Petrol', colSpan: 3, styles: { halign: 'center' } },
-            { content: 'Diesel', colSpan: 3, styles: { halign: 'center' } },
+            { content: 'Petrol', colSpan: 3, styles: { halign: 'center', fillColor: [255, 230, 204], textColor: 0 } }, // Light Orange
+            { content: 'Diesel', colSpan: 3, styles: { halign: 'center', fillColor: [204, 224, 255], textColor: 0 } }, // Light Blue
             { content: 'Total', rowSpan: 2, styles: { valign: 'middle' } }
         ], [
             'Vol', 'Rate', 'Amt', 
@@ -91,7 +94,7 @@ const ConsolidatedReportPage: React.FC = () => {
         body: tableBody,
         startY: 30,
         theme: 'grid',
-        headStyles: { fillColor: [41, 128, 185], textColor: 0 },
+        headStyles: { fillColor: [41, 128, 185], textColor: 255 },
         styles: { fontSize: 8, cellPadding: 2 },
         // Highlight the Total row
         didParseCell: (data) => {
@@ -110,101 +113,122 @@ const ConsolidatedReportPage: React.FC = () => {
         title: 'Date', 
         dataIndex: 'date', 
         key: 'date', 
-        width: 100,
-        render: (text: string) => dayjs(text).format('DD-MM-YYYY') 
+        width: 110,
+        fixed: 'left' as const,
+        render: (text: string) => <span style={{fontWeight: 600}}>{dayjs(text).format('DD MMM')}</span> 
     },
     {
-      title: 'Petrol',
+      title: <span style={{color: '#d97706'}}>PETROL</span>,
+      className: 'sub-header petrol', // Utilizes index.css styles
       children: [
-        { title: 'SALE (L)', dataIndex: 'petrolVolume', key: 'pv', render: (v: number) => v?.toFixed(2), align: 'right' as const },
-        { title: 'Avg Rate', dataIndex: 'petrolRate', key: 'pr', render: (v: number) => v?.toFixed(2), align: 'right' as const },
-        { title: 'AMOUNT (₹)', dataIndex: 'petrolAmount', key: 'pa', render: (v: number) => v?.toFixed(2), align: 'right' as const },
+        { title: 'Vol (L)', dataIndex: 'petrolVolume', key: 'pv', render: (v: number) => fmtVol(v), align: 'right' as const, width: 100 },
+        { title: 'Rate', dataIndex: 'petrolRate', key: 'pr', render: (v: number) => fmtVol(v), align: 'right' as const, width: 80, className: 'text-muted' },
+        { title: 'Amount (₹)', dataIndex: 'petrolAmount', key: 'pa', render: (v: number) => <b>{fmtMoney(v)}</b>, align: 'right' as const, width: 120 },
       ]
     },
     {
-      title: 'Diesel',
+      title: <span style={{color: '#003399'}}>DIESEL</span>,
+      className: 'sub-header diesel', // Utilizes index.css styles
       children: [
-        { title: 'SALE (L)', dataIndex: 'dieselVolume', key: 'dv', render: (v: number) => v?.toFixed(2), align: 'right' as const },
-        { title: 'Avg Rate', dataIndex: 'dieselRate', key: 'dr', render: (v: number) => v?.toFixed(2), align: 'right' as const },
-        { title: 'AMOUNT (₹)', dataIndex: 'dieselAmount', key: 'da', render: (v: number) => v?.toFixed(2), align: 'right' as const },
+        { title: 'Vol (L)', dataIndex: 'dieselVolume', key: 'dv', render: (v: number) => fmtVol(v), align: 'right' as const, width: 100 },
+        { title: 'Rate', dataIndex: 'dieselRate', key: 'dr', render: (v: number) => fmtVol(v), align: 'right' as const, width: 80, className: 'text-muted' },
+        { title: 'Amount (₹)', dataIndex: 'dieselAmount', key: 'da', render: (v: number) => <b>{fmtMoney(v)}</b>, align: 'right' as const, width: 120 },
       ]
     },
     { 
-        title: 'Total (₹)', 
+        title: 'TOTAL (₹)', 
         dataIndex: 'totalAmount', 
         key: 'total', 
-        render: (v: number) => <strong>{v?.toFixed(2)}</strong>,
+        width: 140,
+        fixed: 'right' as const,
+        render: (v: number) => <span style={{fontWeight: 'bold', fontSize: 15, color: '#108ee9'}}>{fmtMoney(v)}</span>,
         align: 'right' as const 
     },
   ];
 
   return (
-    <div style={{ padding: 0 }}>
-      <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <Title level={2} style={{ margin: 0 }}>{stationName}</Title>
-          <Text type="secondary" style={{ fontSize: 16 }}>Month Sales Report</Text>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <Text strong>Select Month:</Text>
-          <DatePicker 
-            picker="month" 
-            value={selectedMonth} 
-            onChange={(val) => val && setSelectedMonth(val)} 
-            allowClear={false}
-          />
-          <Button type="primary" onClick={fetchData} loading={loading}>Load Data</Button>
-        </div>
-        <Button 
-            type="primary" 
-            danger 
-            icon={<FilePdfOutlined />} 
-            onClick={downloadPDF}
-            disabled={data.length === 0}
-        >
-            Download PDF
-        </Button>
+    <div className="page-container" style={{background: '#f0f2f5', minHeight: '100vh'}}>
+      {/* Header Section */}
+      <div className="sticky-header">
+         <div style={{display:'flex', alignItems: 'center', gap: 12}}>
+            <BarChartOutlined style={{fontSize: 20, color: '#1890ff'}} />
+            <div>
+                <div style={{fontWeight: 800, fontSize: 16, color: '#001529', lineHeight: 1.2}}>{stationName}</div>
+                <div style={{fontSize: 12, color: '#666'}}>Monthly Consolidated Report</div>
+            </div>
+         </div>
+         
+         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{background: '#fff', padding: '4px 12px', borderRadius: 6, border: '1px solid #d9d9d9', display:'flex', alignItems:'center', gap: 8}}>
+                <CalendarOutlined style={{color: '#999'}} />
+                <DatePicker 
+                    picker="month" 
+                    value={selectedMonth} 
+                    onChange={(val) => val && setSelectedMonth(val)} 
+                    allowClear={false}
+                    bordered={false}
+                    suffixIcon={null}
+                    style={{padding: 0, width: 100, fontWeight: 600}}
+                    format="MMMM YYYY"
+                />
+            </div>
+            
+            <Button 
+                type="primary" 
+                danger 
+                icon={<FilePdfOutlined />} 
+                onClick={downloadPDF}
+                disabled={data.length === 0}
+            >
+                PDF
+            </Button>
+         </div>
       </div>
       
-      <Card bodyStyle={{ padding: 0 }}>
-        <Table 
-            dataSource={data} 
-            columns={columns} 
-            rowKey={(record) => `${record.date}-${record.shiftType}`}
-            bordered
-            size="small"
-            scroll={{ x: 800 }}
-            summary={(pageData) => {
-                let totalPVol = 0;
-                let totalPAmt = 0;
-                let totalDVol = 0;
-                let totalDAmt = 0;
-                let grandTotal = 0;
+      <div style={{ padding: 24 }}>
+          <Card bodyStyle={{ padding: 0 }} bordered={false} className="industrial-card">
+            <Table 
+                dataSource={data} 
+                columns={columns} 
+                rowKey={(record) => `${record.date}-${record.shiftType}`}
+                bordered
+                size="middle"
+                pagination={false}
+                scroll={{ x: 1000, y: 'calc(100vh - 220px)' }} // Sticky header for long lists
+                className="accounting-table"
+                summary={(pageData) => {
+                    let totalPVol = 0;
+                    let totalPAmt = 0;
+                    let totalDVol = 0;
+                    let totalDAmt = 0;
+                    let grandTotal = 0;
 
-                pageData.forEach((row) => {
-                    totalPVol += row.petrolVolume || 0;
-                    totalPAmt += row.petrolAmount || 0;
-                    totalDVol += row.dieselVolume || 0;
-                    totalDAmt += row.dieselAmount || 0;
-                    grandTotal += row.totalAmount || 0;
-                });
+                    pageData.forEach((row) => {
+                        totalPVol += row.petrolVolume || 0;
+                        totalPAmt += row.petrolAmount || 0;
+                        totalDVol += row.dieselVolume || 0;
+                        totalDAmt += row.dieselAmount || 0;
+                        grandTotal += row.totalAmount || 0;
+                    });
 
-                return (
-                    <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-                        <Table.Summary.Cell index={0} align="center">MONTH TOTAL</Table.Summary.Cell>
-                        <Table.Summary.Cell index={1} align="right">{totalPVol.toFixed(2)}</Table.Summary.Cell>
-                        <Table.Summary.Cell index={3} align="right">-</Table.Summary.Cell>
-                        <Table.Summary.Cell index={3} align="right">{totalPAmt.toFixed(2)}</Table.Summary.Cell>
-                        <Table.Summary.Cell index={5} align="right">{totalDVol.toFixed(2)}</Table.Summary.Cell>
-                        <Table.Summary.Cell index={6} align="right">-</Table.Summary.Cell>
-                        <Table.Summary.Cell index={6} align="right">{totalDAmt.toFixed(2)}</Table.Summary.Cell>
-                        <Table.Summary.Cell index={8} align="right">{grandTotal.toFixed(2)}</Table.Summary.Cell>
-                    </Table.Summary.Row>
-                );
-            }}
-        />
-      </Card>
+                    return (
+                        <Table.Summary.Row style={{ background: '#fafafa' }}>
+                            <Table.Summary.Cell index={0} colSpan={1} align="center">
+                                <span style={{fontWeight: 800, color: '#001529'}}>MONTH TOTAL</span>
+                            </Table.Summary.Cell>
+                            <Table.Summary.Cell index={1} align="right" style={{fontWeight: 700}}>{fmtVol(totalPVol)}</Table.Summary.Cell>
+                            <Table.Summary.Cell index={2} align="right">-</Table.Summary.Cell>
+                            <Table.Summary.Cell index={3} align="right" style={{fontWeight: 700, color: '#d97706'}}>{fmtMoney(totalPAmt)}</Table.Summary.Cell>
+                            <Table.Summary.Cell index={4} align="right" style={{fontWeight: 700}}>{fmtVol(totalDVol)}</Table.Summary.Cell>
+                            <Table.Summary.Cell index={5} align="right">-</Table.Summary.Cell>
+                            <Table.Summary.Cell index={6} align="right" style={{fontWeight: 700, color: '#003399'}}>{fmtMoney(totalDAmt)}</Table.Summary.Cell>
+                            <Table.Summary.Cell index={7} align="right" style={{fontWeight: 800, fontSize: 16, color: '#108ee9', background: '#e6f7ff'}}>{fmtMoney(grandTotal)}</Table.Summary.Cell>
+                        </Table.Summary.Row>
+                    );
+                }}
+            />
+          </Card>
+      </div>
     </div>
   );
 };

@@ -3,8 +3,11 @@ import { InputNumber, Form } from 'antd';
 import { CalculatorOutlined } from '@ant-design/icons';
 import type { DsrShift } from '../types';
 
-// Helper for formatting
-const fmt = (val: number | undefined) => (val || 0).toFixed(2);
+// Helper for formatting Volume (Litres) - No Commas, just decimals
+const fmtVol = (val: number | undefined) => (val || 0).toFixed(2);
+
+// Helper for formatting Money - Commas + 2 decimals
+const fmtMoney = (val: number | undefined) => (val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const PumpReadingsSection = memo(({ 
   shiftData, 
@@ -73,7 +76,12 @@ const PumpReadingsSection = memo(({
                     {shiftData.nozzles.map((n, idx) => (
                         <td key={n.key}>
                             <Form.Item name={['nozzles', idx, 'startingReading']} noStyle>
-                                <InputNumber className="sheet-input" controls={false} precision={2} disabled={isLocked} />
+                                {/* No formatting for Readings */}
+                                <InputNumber 
+                                    className="sheet-input" 
+                                    controls={false} 
+                                    disabled={isLocked}
+                                />
                             </Form.Item>
                         </td>
                     ))}
@@ -84,7 +92,12 @@ const PumpReadingsSection = memo(({
                     {shiftData.nozzles.map((n, idx) => (
                         <td key={n.key} className={n.endingReading > 0 && n.endingReading < (n.startingReading||0) ? 'error-cell' : ''}>
                             <Form.Item name={['nozzles', idx, 'endingReading']} noStyle>
-                                <InputNumber className="sheet-input" controls={false} precision={2} disabled={isLocked} />
+                                {/* No formatting for Readings */}
+                                <InputNumber 
+                                    className="sheet-input" 
+                                    controls={false} 
+                                    disabled={isLocked}
+                                />
                             </Form.Item>
                         </td>
                     ))}
@@ -95,7 +108,13 @@ const PumpReadingsSection = memo(({
                     {shiftData.nozzles.map((n, idx) => (
                         <td key={n.key}>
                             <Form.Item name={['nozzles', idx, 'testingSample']} noStyle>
-                                <InputNumber className="sheet-input" style={{color: '#E21D24'}} controls={false} precision={2} disabled={isLocked} />
+                                {/* No formatting for Readings */}
+                                <InputNumber 
+                                    className="sheet-input" 
+                                    style={{color: '#E21D24'}} 
+                                    controls={false} 
+                                    disabled={isLocked}
+                                />
                             </Form.Item>
                         </td>
                     ))}
@@ -104,10 +123,13 @@ const PumpReadingsSection = memo(({
                 <tr style={{background: '#fdfdfd', borderTop: '2px solid #f0f0f0'}}>
                     <td className="row-label">Net Sale</td>
                     {shiftData.nozzles.map((n) => (
-                        <td key={n.key} className="calc-cell" style={{textAlign:'right', paddingRight: 8, color: '#666'}}>{fmt(n.readingDiff)}</td>
+                        <td key={n.key} className="calc-cell" style={{textAlign:'right', paddingRight: 8, color: '#666'}}>
+                            {fmtVol(n.netSale)}
+                        </td>
                     ))}
-                    <td style={{textAlign:'right', paddingRight: 8, fontWeight:'bold', color: '#003399'}}>{fmt(shiftData.nozzles.reduce((a,c)=>a+(c.netSale||0),0))}</td>
-                    <td style={{textAlign:'right', paddingRight: 8, fontWeight:'bold', fontSize: 13}}>{fmt(shiftData.nozzles.reduce((a,c)=>a+(c.amount||0),0))}</td>
+                    <td style={{textAlign:'right', paddingRight: 8, fontWeight:'bold', color: '#003399'}}>{fmtVol(shiftData.nozzles.reduce((a,c)=>a+(c.netSale||0),0))}</td>
+                    {/* Amount Column uses Money Formatter (Commas) */}
+                    <td style={{textAlign:'right', paddingRight: 8, fontWeight:'bold', fontSize: 13}}>{fmtMoney(shiftData.nozzles.reduce((a,c)=>a+(c.amount||0),0))}</td>
                 </tr>
             </tbody>
         </table>
