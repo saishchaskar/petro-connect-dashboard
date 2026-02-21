@@ -1,7 +1,7 @@
 // src/pages/StationConfigPage.tsx
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Space, Select, Typography, Divider, message, Row, Col, Modal } from 'antd';
-import { PlusOutlined, MinusCircleOutlined, SaveOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Card, Space, Select, Typography, Divider, message, Row, Col, Modal, Spin } from 'antd';
+import { PlusOutlined, MinusCircleOutlined, SaveOutlined, LoadingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { getStationConfig, saveStationConfig } from '../services/config';
@@ -15,12 +15,18 @@ let duIdCounter = Date.now();
 const StationConfigPage: React.FC = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [isFirstDayOfMonth, setIsFirstDayOfMonth] = useState(false);
 
   useEffect(() => {
-    const config = getStationConfig();
-    form.setFieldsValue(config);
+    const loadConfig = async () => {
+      setLoading(true);
+      const config = await getStationConfig();
+      form.setFieldsValue(config);
+      setLoading(false);
+    };
 
+    loadConfig();
     // Check if today is the 1st day of the month
     const today = dayjs();
     setIsFirstDayOfMonth(today.date() === 1);
@@ -32,10 +38,10 @@ const StationConfigPage: React.FC = () => {
       content: 'Are you sure you want to save these station configuration changes?',
       okText: 'Save',
       cancelText: 'Cancel',
-      onOk: () => {
+      onOk: async () => {
         // Ensure shifts are set if not in form
         const finalConfig = { ...values, shifts: ['Day', 'Night'] };
-        saveStationConfig(finalConfig);
+        await saveStationConfig(finalConfig);
         message.success('Station Configuration Saved Successfully!');
         navigate('/dashboard');
       },
@@ -51,6 +57,7 @@ const StationConfigPage: React.FC = () => {
         title={<Title level={3}>Petrol Pump Configuration</Title>} 
         style={{ maxWidth: 900, margin: '0 auto' }}
       >
+        {loading ? <div style={{ textAlign: 'center', padding: 50 }}><Spin indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />} /></div> : (
         <Form
           form={form}
           layout="vertical"
@@ -149,6 +156,7 @@ const StationConfigPage: React.FC = () => {
             </Button>
           </Form.Item>
         </Form>
+        )}
       </Card>
     </div>
   );

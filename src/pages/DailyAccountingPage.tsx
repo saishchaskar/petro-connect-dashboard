@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Form, Button, InputNumber, message, Switch, Badge, Modal, Divider } from 'antd';
+import { Form, Button, InputNumber, message, Switch, Badge, Modal, Divider, Spin } from 'antd';
 import { 
   LeftOutlined, RightOutlined, UnlockOutlined, SaveOutlined, 
-  ShopOutlined, ExclamationCircleOutlined
+  ShopOutlined, ExclamationCircleOutlined, LoadingOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import debounce from 'lodash.debounce';
 import { getDsrShift, saveDsrShift } from '../services/dsr';
 import { getStationConfig } from '../services/config';
-import type { DsrShift, FinancialSummary, StationConfig } from '../types';
+import type { DsrShift, FinancialSummary, StationConfig, DispensingUnit } from '../types';
 import PumpReadingsSection from '../components/PumpReadingsSection'; 
 import '../index.css';
 
@@ -83,20 +83,20 @@ const getInitialShift = (config: StationConfig, dateStr: string, shiftType: stri
     date: dayjs(dateStr), shiftType, isClubbed: false, salesman1: '', salesman2: '', nozzles: allNozzles,
     notes: DENOMINATIONS.map(d => ({ denomination: d, countPetrol: 0, countDiesel: 0 })),
     summary: { totalAmountPetrol: 0, onlinePetrol: 0, cardPetrol: 0, creditPetrol: 0, netCashPetrol: 0, coinsPetrol: 0, receivedCashPetrol: 0, balancePetrol: 0, cashTotalPetrol: 0, totalAmountDiesel: 0, onlineDiesel: 0, cardDiesel: 0, creditDiesel: 0, netCashDiesel: 0, coinsDiesel: 0, receivedCashDiesel: 0, balanceDiesel: 0, cashTotalDiesel: 0 },
-    dips: [{ productType: 'Petrol', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 }, { productType: 'Diesel', startingDip: 0, endingDip: 0, density: 0, temperature: 0, saleOrStock: 0 }],
+    dips: [{ productType: 'Petrol', startingDip: 0, endingDip: 0, density: 0, temperature: 0, stock: 0, sale: 0, measuredTemp: 0, tankerLoad: 0 }, { productType: 'Diesel', startingDip: 0, endingDip: 0, density: 0, temperature: 0, stock: 0, sale: 0, measuredTemp: 0, tankerLoad: 0 }],
   };
 };
 
 const DailyAccountingPage: React.FC = () => {
   const [form] = Form.useForm<DsrShift>();
-  const [config] = useState<StationConfig>(getStationConfig());
+  const [config, setConfig] = useState<StationConfig | null>(null);
   const storedRegDate = localStorage.getItem('station_createdAt');
   const REGISTRATION_DATE = storedRegDate ? storedRegDate : STATION_REGISTRATION_DATE;
-  const stationName = config.stationName;
+  const [stationName, setStationName] = useState('');
  
   const [currentDate, setCurrentDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [currentShift, setCurrentShift] = useState<string>('Day');
-  const [shiftData, setShiftData] = useState<DsrShift>(getInitialShift(getStationConfig(), dayjs().format('YYYY-MM-DD'), 'Day'));
+  const [shiftData, setShiftData] = useState<DsrShift | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState(false);
   
@@ -105,14 +105,24 @@ const DailyAccountingPage: React.FC = () => {
 
   const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null);
 
-  useEffect(() => { loadShift(currentDate, currentShift, config); }, [currentDate, currentShift]);
+  useEffect(() => {
+    getStationConfig().then(loadedConfig => {
+      setConfig(loadedConfig);
+      setStationName(loadedConfig.stationName);
+      // Initial load
+      loadShift(dayjs().format('YYYY-MM-DD'), 'Day', loadedConfig);
+    });
+  }, []);
+
+  useEffect(() => { if (config) loadShift(currentDate, currentShift, config); }, [currentDate, currentShift]);
 
   useEffect(() => {
+    if (!shiftData) return;
     const pRate = shiftData.nozzles.find(n => n.productType === 'Petrol')?.rate || 0;
     const dRate = shiftData.nozzles.find(n => n.productType === 'Diesel')?.rate || 0;
     setPetrolRate(pRate);
     setDieselRate(dRate);
-  }, [shiftData.nozzles]);
+  }, [shiftData]);
 
   const loadShift = async (date: string, shift: string, cfg: StationConfig) => {
     try {
@@ -133,6 +143,23 @@ const DailyAccountingPage: React.FC = () => {
         });
         const safeSummary = { ...skeleton.summary, ...(existingShift.summary || {}) };
         loadedShift = { ...skeleton, ...existingShift, date: dayjs(existingShift.date), nozzles: mergedNozzles, notes: mergedNotes, summary: safeSummary };
+
+        // Handle migration from saleOrStock to stock/sale
+        if (loadedShift.dips && loadedShift.dips.length > 0 && (loadedShift.dips[0] as any).saleOrStock !== undefined) {
+          loadedShift.dips = loadedShift.dips.map(dip => {
+              const anyDip = dip as any;
+              const value = anyDip.saleOrStock || 0;
+              if (loadedShift.shiftType === 'Day') {
+                  dip.stock = value;
+                  dip.sale = 0; // Ensure sale is not undefined
+              } else { // 'Night' shift
+                  dip.sale = value;
+                  dip.stock = 0; // Ensure stock is not undefined
+              }
+              delete anyDip.saleOrStock;
+              return dip;
+          });
+        }
       } else {
         setIsLocked(false);
         const prevData = await getPreviousReadings(date, shift);
@@ -161,18 +188,19 @@ const DailyAccountingPage: React.FC = () => {
 
   const handleGlobalRateChange = useCallback((type: 'Petrol'|'Diesel', newRate: number | null) => {
       if (!newRate) return;
+      if (!shiftData) return;
       if (type === 'Petrol') setPetrolRate(newRate); else setDieselRate(newRate);
 
       const updatedNozzles = shiftData.nozzles.map(n => {
           if (n.productType === type) return { ...n, rate: newRate };
           return n;
       });
-      const newData = { ...shiftData, nozzles: updatedNozzles };
+      const newData: DsrShift = { ...shiftData, nozzles: updatedNozzles };
       const calculated = calculateAll(newData);
       setShiftData(calculated);
       form.setFieldsValue(calculated);
       if (debouncedSaveRef.current) debouncedSaveRef.current();
-  }, [shiftData, form]);
+  }, [shiftData, form, petrolRate, dieselRate]);
 
   const calculateAll = (data: DsrShift): DsrShift => {
       const updatedNozzles = data.nozzles.map(n => {
@@ -192,18 +220,19 @@ const DailyAccountingPage: React.FC = () => {
           const grandTotal = totalAmtPetrol + totalAmtDiesel;
           const netCash = grandTotal - (s.onlinePetrol||0) - (s.cardPetrol||0) - (s.creditPetrol||0);
           const recvCash = notesTotalPetrol + (s.coinsPetrol||0);
-          updatedSummary = { ...s, totalAmountPetrol: totalAmtPetrol, totalAmountDiesel: totalAmtDiesel, netCashPetrol: netCash, receivedCashPetrol: recvCash, balancePetrol: netCash - recvCash, cashTotalPetrol: notesTotalPetrol };
+          updatedSummary = { ...s, totalAmountPetrol: totalAmtPetrol, totalAmountDiesel: totalAmtDiesel, netCashPetrol: netCash, receivedCashPetrol: recvCash, balancePetrol: netCash - recvCash, cashTotalPetrol: notesTotalPetrol + (s.coinsPetrol || 0) };
       } else {
           const netP = totalAmtPetrol - (s.onlinePetrol||0) - (s.cardPetrol||0) - (s.creditPetrol||0);
           const recvP = notesTotalPetrol + (s.coinsPetrol||0);
           const netD = totalAmtDiesel - (s.onlineDiesel||0) - (s.cardDiesel||0) - (s.creditDiesel||0);
           const recvD = notesTotalDiesel + (s.coinsDiesel||0);
-          updatedSummary = { ...s, totalAmountPetrol: totalAmtPetrol, totalAmountDiesel: totalAmtDiesel, netCashPetrol: netP, receivedCashPetrol: recvP, balancePetrol: netP - recvP, cashTotalPetrol: notesTotalPetrol, netCashDiesel: netD, receivedCashDiesel: recvD, balanceDiesel: netD - recvD, cashTotalDiesel: notesTotalDiesel };
+          updatedSummary = { ...s, totalAmountPetrol: totalAmtPetrol, totalAmountDiesel: totalAmtDiesel, netCashPetrol: netP, receivedCashPetrol: recvP, balancePetrol: netP - recvP, cashTotalPetrol: notesTotalPetrol + (s.coinsPetrol || 0), netCashDiesel: netD, receivedCashDiesel: recvD, balanceDiesel: netD - recvD, cashTotalDiesel: notesTotalDiesel + (s.coinsDiesel || 0) };
       }
       return { ...data, nozzles: updatedNozzles, notes: updatedNotes, summary: updatedSummary };
   };
 
   const handleValuesChange = (changedValues: any, allValues: any) => {
+      if (!shiftData) return;
       const mergedNozzles = shiftData.nozzles.map((orig, idx) => ({ ...orig, ...(allValues.nozzles?.[idx] || {}) }));
       const mergedNotes = shiftData.notes.map((orig, idx) => ({ ...orig, ...(allValues.notes?.[idx] || {}) }));
       const mergedDips = shiftData.dips.map((orig, idx) => ({ ...orig, ...(allValues.dips?.[idx] || {}) }));
@@ -243,6 +272,7 @@ const DailyAccountingPage: React.FC = () => {
   };
 
   const prepareDataForSave = async () => {
+      if (!shiftData) throw new Error("Shift data not loaded");
       const formValues = await form.validateFields();
       const mergedNozzles = shiftData.nozzles.map((orig, idx) => ({ ...orig, ...(formValues.nozzles?.[idx] || {}) }));
       const mergedNotes = shiftData.notes.map((orig, idx) => ({ ...orig, ...(formValues.notes?.[idx] || {}) }));
@@ -266,8 +296,8 @@ const DailyAccountingPage: React.FC = () => {
       form.setFieldsValue(finalPayload);
       await saveDsrShift(finalPayload);
       message.success('Auto-saved');
-    } catch (e) { console.error(e); } finally { setIsSaving(false); }
-  }, [form, shiftData, currentDate, currentShift]);
+    } catch (e) { console.error("Auto-save error:", e); } finally { setIsSaving(false); }
+  }, [form, shiftData, currentDate, currentShift, petrolRate, dieselRate]);
 
   useEffect(() => {
     if (debouncedSaveRef.current) debouncedSaveRef.current.cancel();
@@ -295,6 +325,7 @@ const DailyAccountingPage: React.FC = () => {
   const canGoBack = dayjs(currentDate).isAfter(REGISTRATION_DATE) || (dayjs(currentDate).isSame(REGISTRATION_DATE) && currentShift === 'Night');
 
   const renderCollectionTable = (type: 'Petrol' | 'Diesel') => {
+      if (!shiftData) return null;
       return (
         <table className="accounting-table">
             <thead>
@@ -332,7 +363,7 @@ const DailyAccountingPage: React.FC = () => {
                 </tr>
                 <tr><td>Credit Card</td><td><CellInput name={['summary', `card${type}`]} disabled={isLocked} format="financial" /></td></tr>
                 <tr><td>Credit (Udhaar)</td><td><CellInput name={['summary', `credit${type}`]} disabled={isLocked} format="financial" /></td></tr>
-                <tr style={{background: '#f8fafc'}}><td style={{fontSize: 13}}>Expected Cash</td><td className="calc-cell">{fmtMoney(shiftData.summary[`netCash${type}` as keyof FinancialSummary] as number)}</td></tr>
+                <tr style={{background: '#f8fafc'}}><td style={{fontSize: 13}}>Net Expected Cash</td><td className="calc-cell">{fmtMoney(shiftData.summary[`netCash${type}` as keyof FinancialSummary] as number)}</td></tr>
                 <tr style={{background: '#f8fafc'}}><td style={{fontSize: 13}}>Actual Cash</td><td className="calc-cell bold">{fmtMoney(shiftData.summary[`receivedCash${type}` as keyof FinancialSummary] as number)}</td></tr>
                 <tr><td style={{fontWeight:'bold'}}>Short/Excess</td><td className="calc-cell bold" style={{fontSize: 14, color: (shiftData.summary[`balance${type}` as keyof FinancialSummary] as number) > 0 ? '#ef4444' : '#22c55e'}}>{fmtMoney(shiftData.summary[`balance${type}` as keyof FinancialSummary] as number)}</td></tr>
             </tbody>    
@@ -341,8 +372,11 @@ const DailyAccountingPage: React.FC = () => {
   };
 
   return (
-    <div className="page-container" style={{ display: 'flex', flexDirection: 'column', background: '#f0f2f5' }}>
-        <Form form={form} initialValues={shiftData} component={false} onValuesChange={handleValuesChange}>
+    <div className="page-container" style={{ display: 'flex', flexDirection: 'column', background: '#f0f2f5', minHeight: '100vh' }}>
+        {!config || !shiftData ? (
+          <div style={{ textAlign: 'center', padding: '100px' }}><Spin indicator={<LoadingOutlined style={{ fontSize: 32 }} spin />} /></div>
+        ) : (
+        <Form form={form} initialValues={shiftData} component={false} onValuesChange={handleValuesChange} key={`${currentDate}-${currentShift}`}>
             
             <div className="sticky-header">
                 <div style={{display:'flex', gap: 10}}>
@@ -405,19 +439,42 @@ const DailyAccountingPage: React.FC = () => {
                     <Divider orientation="left" style={{margin: '10px 0', fontSize: 12}}>Stock Dip Reading</Divider>
                     <table className="accounting-table">
                         <thead>
-                            <tr><th>Product</th><th>Opening (mm)</th><th>Density</th><th>Temp</th><th>Stock/Sale</th></tr>
+                            <tr>
+                                <th>Product</th>
+                                <th>Opening (mm)</th>
+                                <th>Measured Density</th>
+                                <th>Temp</th>
+                                <th>Density</th>
+                                <th>{currentShift === 'Day' ? 'Stock' : 'Sale'}</th>
+                                <th>Tanker Load</th>
+                            </tr>
                         </thead>
                         <tbody>
-                            <tr><td className="row-header" style={{borderLeft: '4px solid #faad14'}}>PETROL</td>
-                                <td><CellInput name={['dips', 0, 'startingDip']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 0, 'density']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 0, 'temperature']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 0, 'saleOrStock']} disabled={isLocked} format="number" /></td></tr>
-                            <tr><td className="row-header" style={{borderLeft: '4px solid #003399'}}>DIESEL</td>
-                                <td><CellInput name={['dips', 1, 'startingDip']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 1, 'density']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 1, 'temperature']} disabled={isLocked} format="number" /></td><td><CellInput name={['dips', 1, 'saleOrStock']} disabled={isLocked} format="number" /></td></tr>
+                            <tr>
+                                <td className="row-header" style={{borderLeft: '4px solid #faad14'}}>PETROL</td>
+                                <td><CellInput name={['dips', 0, 'startingDip']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 0, 'density']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 0, 'measuredTemp']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 0, 'temperature']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 0, currentShift === 'Day' ? 'stock' : 'sale']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 0, 'tankerLoad']} disabled={isLocked} format="number" /></td>
+                            </tr>
+                            <tr>
+                                <td className="row-header" style={{borderLeft: '4px solid #003399'}}>DIESEL</td>
+                                <td><CellInput name={['dips', 1, 'startingDip']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 1, 'density']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 1, 'measuredTemp']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 1, 'temperature']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 1, currentShift === 'Day' ? 'stock' : 'sale']} disabled={isLocked} format="number" /></td>
+                                <td><CellInput name={['dips', 1, 'tankerLoad']} disabled={isLocked} format="number" /></td>
+                            </tr>
                         </tbody>
                     </table>
                  </div>
                  <div style={{height: 60}}></div>
             </div>
         </Form>
+        )}
     </div>
   );
 };

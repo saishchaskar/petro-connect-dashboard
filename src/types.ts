@@ -85,7 +85,10 @@ export interface DipEntry {
   endingDip: number;
   density: number;
   temperature: number;
-  saleOrStock: number;
+  measuredTemp?: number;
+  tankerLoad?: number;
+  stock?: number;
+  sale?: number;
 }
 
 export interface DsrShift {

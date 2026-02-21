@@ -35,7 +35,7 @@ const LoginPage: React.FC = () => {
       }
 
       message.success('Login Successful');
-      window.location.href = '/dashboard';
+      navigate('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
       message.error('Invalid Username or Password');

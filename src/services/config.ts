@@ -1,7 +1,6 @@
 // src/services/config.ts
 import type { StationConfig } from '../types';
-
-const CONFIG_KEY = 'petro_station_config';
+import apiClient from './api';
 
 const DEFAULT_CONFIG: StationConfig = {
   stationName: 'My Petrol Station',
@@ -27,16 +26,46 @@ const DEFAULT_CONFIG: StationConfig = {
   isConfigured: false,
 };
 
-export const getStationConfig = (): StationConfig => {
-  const stored = localStorage.getItem(CONFIG_KEY);
-  return stored ? JSON.parse(stored) : DEFAULT_CONFIG;
+export const getStationConfig = async (): Promise<StationConfig> => {
+    try {
+        const username = localStorage.getItem('username');
+        if (!username) throw new Error('Username not found in localStorage');
+        const response = await apiClient.get('/station/config', { params: { username } });
+        const stationData = response.data;
+
+        if (stationData && stationData.configuration) {
+            const config = JSON.parse(stationData.configuration);
+            return { ...config, stationName: stationData.stationName, isConfigured: true };
+        }
+
+        // If no config on backend, return default, allowing user to configure it.
+        return { ...DEFAULT_CONFIG, stationName: stationData.stationName || 'My Petrol Station', isConfigured: false };
+    } catch (error: any) {
+        if (error.response && error.response.status === 404) {
+            return DEFAULT_CONFIG;
+        }
+        console.error('Error fetching station config:', error);
+        // Fallback for network errors etc.
+        return DEFAULT_CONFIG;
+    }
 };
 
-export const saveStationConfig = (config: StationConfig) => {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...config, isConfigured: true }));
+export const saveStationConfig = async (config: StationConfig) => {
+    const username = localStorage.getItem('username');
+    if (!username) throw new Error('Username not found in localStorage');
+    const payload = { ...config, isConfigured: true };
+    const requestBody = { configuration: JSON.stringify(payload) };
+    try {
+        await apiClient.put('/station/config', requestBody, { params: { username } });
+        localStorage.setItem('station_configured', 'true');
+    } catch (error) {
+        console.error('Failed to save config:', error);
+        throw new Error('Failed to save config');
+    }
 };
 
 export const isStationConfigured = (): boolean => {
-  const config = getStationConfig();
-  return config.isConfigured;
+  // This sync function is now unreliable and deprecated.
+  // Configuration status should be checked asynchronously or on login.
+  return localStorage.getItem('station_configured') === 'true';
 };
